@@ -12,8 +12,8 @@ df_processed = None
 bulan_laporan_val = None
 tahun_laporan_val = None
 
-st.title("Aplikasi Rekapitulasi Absensi Karyawan")
-st.write("Unggah file Excel laporan sidik jari Anda di sini untuk diproses.")
+st.title("Convert Log Absensi Mesin Eppos")
+st.write("Unggah file Excel laporan sidik jari Kamu di sini untuk diproses.")
 
 def process_attendance_log(uploaded_file):
     """
@@ -422,7 +422,7 @@ if uploaded_file is not None:
         st.success(f"File '{output_file_name}' siap diunduh.")
 
 else:
-    st.info("Silakan unggah file Excel Anda untuk memulai.")
+    st.info("Silakan unggah file Excel Kamu untuk memulai.")
     st.markdown("""
     ---
     **Format File yang Diharapkan:**
