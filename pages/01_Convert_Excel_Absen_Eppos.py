@@ -4,14 +4,21 @@ import io
 from datetime import datetime, time, date, timedelta
 import re
 import math
-from openpyxl import Workbook # Tambahkan ini
-from openpyxl.utils.dataframe import dataframe_to_rows # Tambahkan ini
+from openpyxl import Workbook
+from openpyxl.utils.dataframe import dataframe_to_rows
 
 # --- Inisialisasi variabel di awal skrip untuk menghindari NameError ---
 df_processed = None
 bulan_laporan_val = None
 tahun_laporan_val = None
 
+# Mengatur konfigurasi halaman
+st.set_page_config(
+    layout="wide", # Mengatur layout ke 'wide' untuk memanfaatkan lebar layar
+    page_title="Dashboard Tools Ni Wayan Astari"
+)
+
+# Menampilkan judul dashboard
 st.title("Convert Log Absensi Mesin Eppos")
 st.write("Unggah file Excel laporan sidik jari Kamu di sini untuk diproses.")
 
@@ -397,7 +404,7 @@ if uploaded_file is not None:
         else:
             output_file_name = 'Rekap_Absensi_Tanpa_Periode.xlsx' # Nama fallback jika periode tidak ditemukan
 
-        # --- Perubahan di sini untuk menerapkan proteksi ---
+        # --- Perubahan di sini untuk menerapkan proteksi yang diinginkan ---
         wb = Workbook()
         ws = wb.active
         ws.title = 'Rekap Absensi' # Atur nama sheet
@@ -407,7 +414,11 @@ if uploaded_file is not None:
             ws.append(row)
 
         # Terapkan proteksi pada sheet
-        ws.protection.sheet = True
+        ws.protection.sheet = True # Proteksi sheet secara keseluruhan
+        # Izinkan pengguna untuk memformat kolom dan baris (mengubah lebar/tinggi)
+        ws.protection.format_columns = False # TIDAK memproteksi format kolom
+        ws.protection.format_rows = False    # TIDAK memproteksi format baris
+        # Secara default, 'locked' status sel adalah True, jadi isinya tidak bisa diedit.
 
         # Simpan workbook ke buffer
         wb.save(output_buffer)
@@ -422,13 +433,19 @@ if uploaded_file is not None:
         st.success(f"File '{output_file_name}' siap diunduh.")
 
 else:
-    st.info("Silakan unggah file Excel Kamu untuk memulai.")
-    st.markdown("""
-    ---
-    **Format File yang Diharapkan:**
-    * File Excel (.xlsx atau .xls) dari mesin sidik jari pertama.
-    * Harus mengandung baris "Periode :YYYY/MM/DD ~ MM/DD" untuk menentukan tahun dan bulan.
-    * Harus ada baris nomor hari (1-31) di bawah baris periode.
-    * Harus ada blok karyawan yang diawali dengan "No :", diikuti nama karyawan.
-    * Log absensi per hari harus ada di kolom-kolom di bawah nomor hari.
-    """)
+    # Menggunakan st.columns untuk mengontrol lebar kolom pada bagian informasi
+    col_main, col_info = st.columns([3, 1]) # Kolom utama lebih lebar
+
+    with col_main:
+        st.info("Silakan unggah file Excel Kamu untuk memulai.")
+
+    with col_info:
+        st.markdown("""
+        ---
+        **Format File yang Diharapkan:**
+        * File Excel (.xlsx atau .xls) dari mesin sidik jari pertama.
+        * Harus mengandung baris "Periode :YYYY/MM/DD ~ MM/DD" untuk menentukan tahun dan bulan.
+        * Harus ada baris nomor hari (1-31) di bawah baris periode.
+        * Harus ada blok karyawan yang diawali dengan "No :", diikuti nama karyawan.
+        * Log absensi per hari harus ada di kolom-kolom di bawah nomor hari.
+        """)
