@@ -404,7 +404,7 @@ if uploaded_file is not None:
         else:
             output_file_name = 'Rekap_Absensi_Tanpa_Periode.xlsx' # Nama fallback jika periode tidak ditemukan
 
-        # --- Perubahan di sini untuk menerapkan proteksi yang diinginkan ---
+        # --- Bagian di sini yang sebelumnya menerapkan proteksi, sekarang dihapus ---
         wb = Workbook()
         ws = wb.active
         ws.title = 'Rekap Absensi' # Atur nama sheet
@@ -413,12 +413,10 @@ if uploaded_file is not None:
         for r_idx, row in enumerate(dataframe_to_rows(df_processed_for_excel, index=False, header=True)):
             ws.append(row)
 
-        # Terapkan proteksi pada sheet
-        ws.protection.sheet = True # Proteksi sheet secara keseluruhan
-        # Izinkan pengguna untuk memformat kolom dan baris (mengubah lebar/tinggi)
-        ws.protection.format_columns = False # TIDAK memproteksi format kolom
-        ws.protection.format_rows = False    # TIDAK memproteksi format baris
-        # Secara default, 'locked' status sel adalah True, jadi isinya tidak bisa diedit.
+        # Baris-baris proteksi berikut telah DIHAPUS:
+        # ws.protection.sheet = True
+        # ws.protection.format_columns = False
+        # ws.protection.format_rows = False
 
         # Simpan workbook ke buffer
         wb.save(output_buffer)
