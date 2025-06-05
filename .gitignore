@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+lib/
+build/
+develop-eggs/
+dist/
+eggs/
+*.egg-*.info
+.env
+
+# Editor dan OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+*.log
