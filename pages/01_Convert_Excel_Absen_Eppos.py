@@ -6,7 +6,7 @@ import re
 import math
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
-from openpyxl.styles import Protection
+from openpyxl.styles import Protection # Masih diimpor tapi tidak akan digunakan untuk mengunci sel
 
 # --- Inisialisasi variabel di awal skrip untuk menghindari NameError ---
 df_processed = None
@@ -205,11 +205,10 @@ def process_attendance_log(uploaded_file):
 
     st.info("Mengolah log mentah ke format output yang diinginkan (dengan aturan shift)...")
 
-    # --- PERUBAHAN DI SINI: Tambah kolom baru ---
     kolom_final = ['No', 'Nama', 'Tanggal', 'Jam Datang', 'Jam Pulang', 
                    'Jam Istirahat Mulai', 'Jam Istirahat Selesai', 
                    'Durasi Jam Kerja', 'Durasi Kerja Pembulatan', 'Durasi Istirahat',
-                   'Keterangan Tambahan 1', 'Keterangan Tambahan 2'] # Kolom baru
+                   'Keterangan Tambahan 1', 'Keterangan Tambahan 2'] 
     
     log_karyawan_harian = {}
 
@@ -232,8 +231,8 @@ def process_attendance_log(uploaded_file):
                 'Durasi Jam Kerja': None,
                 'Durasi Kerja Pembulatan': None,
                 'Durasi Istirahat': None,
-                'Keterangan Tambahan 1': '', # Inisialisasi kolom baru
-                'Keterangan Tambahan 2': '', # Inisialisasi kolom baru
+                'Keterangan Tambahan 1': '', 
+                'Keterangan Tambahan 2': '', 
                 'log_all_times': []
             }
         log_karyawan_harian[key]['log_all_times'].append(jam_obj)
@@ -355,8 +354,6 @@ if uploaded_file is not None:
         st.subheader("Download Hasil Pengolahan")
         
         df_processed_for_excel = df_processed.copy()
-        # Pastikan kolom keterangan juga ada di DataFrame yang akan ditulis ke Excel
-        # Jika belum ada data di kolom tersebut, isikan string kosong
         if 'Keterangan Tambahan 1' not in df_processed_for_excel.columns:
             df_processed_for_excel['Keterangan Tambahan 1'] = ''
         if 'Keterangan Tambahan 2' not in df_processed_for_excel.columns:
@@ -376,47 +373,39 @@ if uploaded_file is not None:
         ws = wb.active
         ws.title = 'Rekap Absensi'
 
-        columns_to_lock = [
-            'Jam Datang', 
-            'Jam Pulang', 
-            'Jam Istirahat Mulai', 
-            'Jam Istirahat Selesai'
-            
-            # --- PERUBAHAN DI SINI: Pastikan kolom baru TIDAK dikunci ---
-            # 'Keterangan Tambahan 1', # JANGAN masukkan ini jika ingin bisa diedit
-            # 'Keterangan Tambahan 2'  # JANGAN masukkan ini jika ingin bisa diedit
-        ]
+        # --- PERUBAHAN DI SINI: columns_to_lock menjadi kosong atau dihapus ---
+        # Karena kita ingin mematikan proteksi sheet, daftar ini tidak lagi relevan
+        # atau bisa dibiarkan kosong
+        columns_to_lock = [] # Daftar kolom yang dikunci sekarang kosong
         
         header_names = list(df_processed_for_excel.columns)
         
         # --- Bagian Kritis: Menentukan Rentang Maksimum Worksheet ---
-        max_populated_row = df_processed_for_excel.shape[0] + 1 # +1 for header
-        
-        max_rows_for_protection = max(max_populated_row + 50, 1000) # Bisa disesuaikan
+        max_populated_row = df_processed_for_excel.shape[0] + 1 
+        max_rows_for_protection = max(max_populated_row + 50, 1000) 
         num_cols = len(header_names)
 
         # --- Iterasi untuk mengatur properti proteksi SETIAP sel yang mungkin digunakan ---
+        # Karena columns_to_lock kosong, semua sel akan diatur locked=False
         for r_idx_excel in range(1, max_rows_for_protection + 1):
             for c_idx in range(num_cols):
                 column_name = header_names[c_idx]
                 cell = ws.cell(row=r_idx_excel, column=c_idx + 1)
                 
-                # Atur nilai header pada baris pertama
                 if r_idx_excel == 1:
                     cell.value = column_name
                 
-                # Atur proteksi:
-                if column_name in columns_to_lock:
-                    cell.protection = Protection(locked=True)
-                else:
-                    cell.protection = Protection(locked=False)
+                # --- PERUBAHAN DI SINI: Selalu set locked=False ---
+                # Karena columns_to_lock sekarang kosong, kondisi ini akan selalu True
+                # jika Anda tetap ingin menggunakan struktur if, atau bisa disederhanakan
+                cell.protection = Protection(locked=False) 
         
         # --- Isi data dari DataFrame ke sel yang sudah diatur proteksinya ---
         for r_idx, row_data in enumerate(dataframe_to_rows(df_processed_for_excel, index=False, header=False)):
-            row_num_excel = r_idx + 2 # Dimulai dari baris ke-2 setelah header (baris 1)
+            row_num_excel = r_idx + 2 
             for c_idx, cell_value in enumerate(row_data):
                 cell = ws.cell(row=row_num_excel, column=c_idx + 1)
-                cell.value = cell_value # Hanya set nilai, properti proteksi sudah diatur di loop atas
+                cell.value = cell_value 
 
         # --- Mengatur Lebar Kolom ---
         DEFAULT_COLUMN_WIDTH = 25
@@ -424,8 +413,8 @@ if uploaded_file is not None:
             column_letter = chr(ord('A') + i)
             ws.column_dimensions[column_letter].width = DEFAULT_COLUMN_WIDTH
 
-        # --- Mengaktifkan Proteksi Sheet ---
-        ws.protection.sheet = True 
+        # --- PERUBAHAN DI SINI: Baris ini DIHAPUS atau DIKOMEN ---
+        # ws.protection.sheet = True 
         # ws.protection.password = 'YourStrongPassword'
 
         wb.save(output_buffer)
@@ -437,7 +426,7 @@ if uploaded_file is not None:
             file_name=output_file_name,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-        st.success(f"File '{output_file_name}' siap diunduh. Lebar kolom diatur dan sel kosong di kolom yang tidak terkunci bisa diedit.")
+        st.success(f"File '{output_file_name}' siap diunduh. Semua kolom bisa diedit dan lebar kolom diatur.")
 
 else:
     col_main, col_info = st.columns([3, 1])
