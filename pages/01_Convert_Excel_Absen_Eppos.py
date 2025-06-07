@@ -6,6 +6,7 @@ import re
 import math
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl.styles import Protection
 
 # --- Inisialisasi variabel di awal skrip untuk menghindari NameError ---
 df_processed = None
@@ -14,7 +15,7 @@ tahun_laporan_val = None
 
 # Mengatur konfigurasi halaman
 st.set_page_config(
-    layout="wide", # Mengatur layout ke 'wide' untuk memanfaatkan lebar layar
+    layout="wide",
     page_title="Dashboard Tools Ni Wayan Astari"
 )
 
@@ -30,7 +31,6 @@ def process_attendance_log(uploaded_file):
     st.info("Memulai pengolahan data log karyawan dari laporan sidik jari...")
 
     try:
-        # Membaca seluruh sheet tanpa header spesifik (header=None)
         df_raw = pd.read_excel(io.BytesIO(uploaded_file.read()), header=None)
         st.success(f"File '{uploaded_file.name}' berhasil dibaca secara mentah.")
     except Exception as e:
@@ -52,7 +52,6 @@ def process_attendance_log(uploaded_file):
     bulan_laporan = None
     periode_row_index = -1
 
-    # Cari baris yang mengandung 'Periode : ' dan string periode
     for r_idx, row_series in df_raw.iterrows():
         row_str = ' '.join(row_series.dropna().astype(str).tolist())
         
@@ -206,9 +205,11 @@ def process_attendance_log(uploaded_file):
 
     st.info("Mengolah log mentah ke format output yang diinginkan (dengan aturan shift)...")
 
+    # --- PERUBAHAN DI SINI: Tambah kolom baru ---
     kolom_final = ['No', 'Nama', 'Tanggal', 'Jam Datang', 'Jam Pulang', 
                    'Jam Istirahat Mulai', 'Jam Istirahat Selesai', 
-                   'Durasi Jam Kerja', 'Durasi Kerja Pembulatan', 'Durasi Istirahat']
+                   'Durasi Jam Kerja', 'Durasi Kerja Pembulatan', 'Durasi Istirahat',
+                   'Keterangan Tambahan 1', 'Keterangan Tambahan 2'] # Kolom baru
     
     log_karyawan_harian = {}
 
@@ -231,6 +232,8 @@ def process_attendance_log(uploaded_file):
                 'Durasi Jam Kerja': None,
                 'Durasi Kerja Pembulatan': None,
                 'Durasi Istirahat': None,
+                'Keterangan Tambahan 1': '', # Inisialisasi kolom baru
+                'Keterangan Tambahan 2': '', # Inisialisasi kolom baru
                 'log_all_times': []
             }
         log_karyawan_harian[key]['log_all_times'].append(jam_obj)
@@ -242,85 +245,49 @@ def process_attendance_log(uploaded_file):
         if not all_times:
             continue
 
-        initial_jam_datang = all_times[0]
-        initial_jam_pulang = all_times[-1] # Digunakan sebagai fallback
+        data['Jam Datang'] = None
+        data['Jam Pulang'] = None
+        data['Jam Istirahat Mulai'] = None
+        data['Jam Istirahat Selesai'] = None
 
+        for t_log in all_times:
+            if time(6, 0, 0) <= t_log <= time(9, 0, 0):
+                if data['Jam Datang'] is None or t_log < data['Jam Datang']:
+                    data['Jam Datang'] = t_log
+            elif time(14, 30, 0) <= t_log <= time(15, 0, 0):
+                if data['Jam Datang'] is None or t_log < data['Jam Datang']:
+                    data['Jam Datang'] = t_log
 
-        shift_type = None
-        if initial_jam_datang < time(9, 0, 0):
-            shift_type = 'Shift 1'
-        elif time(14, 30, 0) <= initial_jam_datang <= time(16, 0, 0):
-            shift_type = 'Shift 2'
+        if data['Jam Datang'] is None and all_times:
+             data['Jam Datang'] = all_times[0]
+
+        for t_log in reversed(all_times):
+            if time(23, 0, 0) <= t_log <= time(23, 59, 59):
+                if data['Jam Pulang'] is None or t_log > data['Jam Pulang']:
+                    data['Jam Pulang'] = t_log
+                break
+            elif time(16, 0, 0) <= t_log <= time(18, 0, 0):
+                if data['Jam Pulang'] is None or t_log > data['Jam Pulang']:
+                    data['Jam Pulang'] = t_log
+
+        if data['Jam Pulang'] is None and all_times:
+            data['Jam Pulang'] = all_times[-1]
+
+        potential_break_times = []
+        for t_log in all_times:
+            if time(11, 0, 0) <= t_log <= time(14, 0, 0):
+                potential_break_times.append(t_log)
+            elif time(19, 0, 0) <= t_log <= time(22, 0, 0):
+                potential_break_times.append(t_log)
         
-        # data['Shift'] = shift_type # Opsional, jika ingin melihat shift di output
+        if len(potential_break_times) >= 2:
+            sorted_breaks = sorted(potential_break_times)
+            data['Jam Istirahat Mulai'] = sorted_breaks[0]
+            data['Jam Istirahat Selesai'] = sorted_breaks[-1]
+        elif len(potential_break_times) == 1:
+            data['Jam Istirahat Mulai'] = potential_break_times[0]
+            data['Jam Istirahat Selesai'] = potential_break_times[0]
 
-        # Atur Jam Datang, Pulang, Istirahat sesuai shift
-        if shift_type == 'Shift 1':
-            found_datang = False
-            for t_log in all_times:
-                if t_log < time(9, 0, 0):
-                    if data['Jam Datang'] is None or t_log < data['Jam Datang']:
-                        data['Jam Datang'] = t_log
-                    found_datang = True
-                elif found_datang:
-                    break
-            
-            found_pulang = False
-            for t_log in reversed(all_times):
-                if time(16, 0, 0) < t_log < time(18, 0, 0):
-                    if data['Jam Pulang'] is None or t_log > data['Jam Pulang']:
-                        data['Jam Pulang'] = t_log
-                    found_pulang = True
-                elif found_pulang:
-                    break
-
-            potential_break_times = []
-            for t_log in all_times:
-                if time(11, 0, 0) <= t_log <= time(14, 0, 0):
-                    potential_break_times.append(t_log)
-            
-            if len(potential_break_times) >= 2:
-                sorted_breaks = sorted(potential_break_times)
-                data['Jam Istirahat Mulai'] = sorted_breaks[0]
-                data['Jam Istirahat Selesai'] = sorted_breaks[-1]
-
-        elif shift_type == 'Shift 2':
-            found_datang = False
-            for t_log in all_times:
-                if time(14, 30, 0) <= t_log <= time(16, 0, 0):
-                    if data['Jam Datang'] is None or t_log < data['Jam Datang']:
-                        data['Jam Datang'] = t_log
-                    found_datang = True
-                elif found_datang:
-                    break
-            
-            found_pulang = False
-            for t_log in reversed(all_times):
-                if t_log > time(21, 0, 0):
-                    if data['Jam Pulang'] is None or t_log > data['Jam Pulang']:
-                        data['Jam Pulang'] = t_log
-                    found_pulang = True
-                elif found_pulang:
-                    break
-
-            potential_break_times = []
-            for t_log in all_times:
-                if time(18, 0, 0) <= t_log <= time(20, 0, 0):
-                    potential_break_times.append(t_log)
-            
-            if len(potential_break_times) >= 2:
-                sorted_breaks = sorted(potential_break_times)
-                data['Jam Istirahat Mulai'] = sorted_breaks[0]
-                data['Jam Istirahat Selesai'] = sorted_breaks[-1]
-        
-        # Fallback jika Jam Datang/Pulang belum terisi setelah logika shift
-        if data['Jam Datang'] is None:
-            data['Jam Datang'] = initial_jam_datang
-        if data['Jam Pulang'] is None:
-            data['Jam Pulang'] = initial_jam_pulang
-
-
-        # Hitung Durasi Jam Kerja (asli)
         if data['Jam Datang'] and data['Jam Pulang']:
             dt_datang = datetime.combine(data['Tanggal'], data['Jam Datang'])
             dt_pulang = datetime.combine(data['Tanggal'], data['Jam Pulang'])
@@ -338,7 +305,6 @@ def process_attendance_log(uploaded_file):
             
             data['Durasi Jam Kerja'] = ' '.join(durasi_str) if durasi_str else '0 menit'
 
-            # Hitung Durasi Kerja Pembulatan
             total_minutes_for_rounding = total_seconds / 60
             full_hours = math.floor(total_minutes_for_rounding / 60)
             remaining_minutes = total_minutes_for_rounding % 60
@@ -352,7 +318,6 @@ def process_attendance_log(uploaded_file):
             data['Durasi Jam Kerja'] = ''
             data['Durasi Kerja Pembulatan'] = ''
 
-        # Hitung Durasi Istirahat
         if data['Jam Istirahat Mulai'] and data['Jam Istirahat Selesai']:
             dt_istirahat_mulai = datetime.combine(data['Tanggal'], data['Jam Istirahat Mulai'])
             dt_istirahat_selesai = datetime.combine(data['Tanggal'], data['Jam Istirahat Selesai'])
@@ -384,43 +349,87 @@ if uploaded_file is not None:
     st.subheader("File yang Diunggah:")
     st.write(uploaded_file.name)
 
-    # Panggil fungsi dan berikan nilai ke variabel
     df_processed, bulan_laporan_val, tahun_laporan_val = process_attendance_log(uploaded_file)
 
-    # Lanjutkan hanya jika pemrosesan berhasil (df_processed tidak None)
     if df_processed is not None:
         st.subheader("Download Hasil Pengolahan")
         
-        # Konversi objek time ke string HH:MM:SS sebelum disimpan ke Excel
         df_processed_for_excel = df_processed.copy()
+        # Pastikan kolom keterangan juga ada di DataFrame yang akan ditulis ke Excel
+        # Jika belum ada data di kolom tersebut, isikan string kosong
+        if 'Keterangan Tambahan 1' not in df_processed_for_excel.columns:
+            df_processed_for_excel['Keterangan Tambahan 1'] = ''
+        if 'Keterangan Tambahan 2' not in df_processed_for_excel.columns:
+            df_processed_for_excel['Keterangan Tambahan 2'] = ''
+
         for col in ['Jam Datang', 'Jam Pulang', 'Jam Istirahat Mulai', 'Jam Istirahat Selesai']:
             df_processed_for_excel[col] = df_processed_for_excel[col].apply(lambda x: x.strftime('%H:%M:%S') if isinstance(x, time) else '')
 
         output_buffer = io.BytesIO()
         
-        # Penanganan nama file jika bulan_laporan_val atau tahun_laporan_val mungkin None
         if bulan_laporan_val is not None and tahun_laporan_val is not None:
             output_file_name = f'Rekap_Absensi_Bulan_{bulan_laporan_val:02d}_{tahun_laporan_val}.xlsx'
         else:
-            output_file_name = 'Rekap_Absensi_Tanpa_Periode.xlsx' # Nama fallback jika periode tidak ditemukan
+            output_file_name = 'Rekap_Absensi_Tanpa_Periode.xlsx'
 
-        # --- Bagian di sini yang sebelumnya menerapkan proteksi, sekarang dihapus ---
         wb = Workbook()
         ws = wb.active
-        ws.title = 'Rekap Absensi' # Atur nama sheet
+        ws.title = 'Rekap Absensi'
 
-        # Tulis DataFrame ke sheet
-        for r_idx, row in enumerate(dataframe_to_rows(df_processed_for_excel, index=False, header=True)):
-            ws.append(row)
+        columns_to_lock = [
+            'Jam Datang', 
+            'Jam Pulang', 
+            'Jam Istirahat Mulai', 
+            'Jam Istirahat Selesai'
+            
+            # --- PERUBAHAN DI SINI: Pastikan kolom baru TIDAK dikunci ---
+            # 'Keterangan Tambahan 1', # JANGAN masukkan ini jika ingin bisa diedit
+            # 'Keterangan Tambahan 2'  # JANGAN masukkan ini jika ingin bisa diedit
+        ]
+        
+        header_names = list(df_processed_for_excel.columns)
+        
+        # --- Bagian Kritis: Menentukan Rentang Maksimum Worksheet ---
+        max_populated_row = df_processed_for_excel.shape[0] + 1 # +1 for header
+        
+        max_rows_for_protection = max(max_populated_row + 50, 1000) # Bisa disesuaikan
+        num_cols = len(header_names)
 
-        # Baris-baris proteksi berikut telah DIHAPUS:
-        # ws.protection.sheet = True
-        # ws.protection.format_columns = False
-        # ws.protection.format_rows = False
+        # --- Iterasi untuk mengatur properti proteksi SETIAP sel yang mungkin digunakan ---
+        for r_idx_excel in range(1, max_rows_for_protection + 1):
+            for c_idx in range(num_cols):
+                column_name = header_names[c_idx]
+                cell = ws.cell(row=r_idx_excel, column=c_idx + 1)
+                
+                # Atur nilai header pada baris pertama
+                if r_idx_excel == 1:
+                    cell.value = column_name
+                
+                # Atur proteksi:
+                if column_name in columns_to_lock:
+                    cell.protection = Protection(locked=True)
+                else:
+                    cell.protection = Protection(locked=False)
+        
+        # --- Isi data dari DataFrame ke sel yang sudah diatur proteksinya ---
+        for r_idx, row_data in enumerate(dataframe_to_rows(df_processed_for_excel, index=False, header=False)):
+            row_num_excel = r_idx + 2 # Dimulai dari baris ke-2 setelah header (baris 1)
+            for c_idx, cell_value in enumerate(row_data):
+                cell = ws.cell(row=row_num_excel, column=c_idx + 1)
+                cell.value = cell_value # Hanya set nilai, properti proteksi sudah diatur di loop atas
 
-        # Simpan workbook ke buffer
+        # --- Mengatur Lebar Kolom ---
+        DEFAULT_COLUMN_WIDTH = 25
+        for i, col_name in enumerate(header_names):
+            column_letter = chr(ord('A') + i)
+            ws.column_dimensions[column_letter].width = DEFAULT_COLUMN_WIDTH
+
+        # --- Mengaktifkan Proteksi Sheet ---
+        ws.protection.sheet = True 
+        # ws.protection.password = 'YourStrongPassword'
+
         wb.save(output_buffer)
-        output_buffer.seek(0) # Kembali ke awal buffer
+        output_buffer.seek(0)
 
         st.download_button(
             label="Unduh File Excel Hasil",
@@ -428,11 +437,10 @@ if uploaded_file is not None:
             file_name=output_file_name,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-        st.success(f"File '{output_file_name}' siap diunduh.")
+        st.success(f"File '{output_file_name}' siap diunduh. Lebar kolom diatur dan sel kosong di kolom yang tidak terkunci bisa diedit.")
 
 else:
-    # Menggunakan st.columns untuk mengontrol lebar kolom pada bagian informasi
-    col_main, col_info = st.columns([3, 1]) # Kolom utama lebih lebar
+    col_main, col_info = st.columns([3, 1])
 
     with col_main:
         st.info("Silakan unggah file Excel Kamu untuk memulai.")
