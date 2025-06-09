@@ -12,6 +12,7 @@ Silakan gunakan navigasi di **sidebar sebelah kiri** untuk memilih alat yang ing
 
 **Penting:**
 * **Convert Excel Absen Eppos:** Untuk memproses data absensi dari file Excel mesin sidik jari.
+* **Jejer 9 Gambar ke 1 File A4:** Untuk menjejer 9 file gambar ke 1 lembar A4.
 * --- Tools lain coming soon kalau udah bosen kerja manual :) ---
 """)
 
