@@ -23,7 +23,7 @@ def create_a4_grid_pdf(uploaded_files_data):
     # Coba memuat font default. Jika tidak ada, gunakan font bawaan Pillow
     try:
         # Coba muat versi bold dari font
-        font_path = "arialbd.ttf"
+        font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
         font_size = 40 # Ukuran font yang lebih besar
         font = ImageFont.truetype(font_path, font_size)
     except IOError:
