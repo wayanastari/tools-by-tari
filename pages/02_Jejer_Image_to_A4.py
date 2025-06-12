@@ -27,7 +27,7 @@ def create_a4_grid_pdf(uploaded_files_data):
     # Attempt to load a bold font (Arial Bold is common on Windows)
     # Fallback to default Pillow font if not found.
     try:
-        font_path = "arialbd.ttf"
+        font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
         font_size = 40
         font = ImageFont.truetype(font_path, font_size)
     except IOError:
