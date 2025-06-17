@@ -2,8 +2,11 @@ import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
 import os
 import io
+import zipfile # Import library zipfile
 
+# --- PENTING: PASTIKAN NAMA FILE FONT INI SESUAI DENGAN YANG ANDA UNDUH DAN ADA DI REPO GITHUB ---
 FONT_FILE_NAME = "Poppins-Bold.ttf" 
+# Fallback font jika font kustom tidak ditemukan (misalnya "arial.ttf" atau "DejaVuSans-Bold.ttf")
 FALLBACK_FONT_NAME = "arial.ttf" 
 
 # Fungsi untuk memproses gambar
@@ -42,10 +45,10 @@ def process_single_image(background_img, product_img_file, watermark_img, target
             font_size = int(bg_height * 0.05) 
             # Coba load font Poppins Bold dari file yang di-upload
             font = ImageFont.truetype(FONT_FILE_NAME, font_size)
-            st.info(f"Menggunakan font: {FONT_FILE_NAME}")
+            # st.info(f"Menggunakan font: {FONT_FILE_NAME}") # Komentar ini karena akan sering muncul
         except IOError:
             # Jika font kustom tidak ditemukan, coba font fallback sistem
-            st.warning(f"Font '{FONT_FILE_NAME}' tidak ditemukan. Mencoba font fallback '{FALLBACK_FONT_NAME}'. Pastikan '{FONT_FILE_NAME}' ada di repositori Anda.")
+            # st.warning(f"Font '{FONT_FILE_NAME}' tidak ditemukan. Mencoba font fallback '{FALLBACK_FONT_NAME}'. Pastikan '{FONT_FILE_NAME}' ada di repositori Anda.") # Komentar ini
             try:
                 font = ImageFont.truetype(FALLBACK_FONT_NAME, font_size)
             except IOError:
@@ -78,7 +81,6 @@ def process_single_image(background_img, product_img_file, watermark_img, target
             resized_watermark = resized_watermark.convert('RGBA')
 
         alpha = resized_watermark.split()[3] 
-        # Sangat transparan: nilai 0.1 atau 0.05 bisa dicoba
         alpha = Image.eval(alpha, lambda x: x * 0.1) # 10% dari opasitas asli
         resized_watermark.putalpha(alpha)
 
@@ -105,13 +107,13 @@ def process_single_image(background_img, product_img_file, watermark_img, target
             file_size = img_byte_arr.tell()
 
             if file_size <= target_size_bytes:
-                st.info(f"Produk '{product_name_raw}': Ukuran {file_size / (1024*1024):.2f} MB (Kualitas: {current_quality}).")
+                # st.info(f"Produk '{product_name_raw}': Ukuran {file_size / (1024*1024):.2f} MB (Kualitas: {current_quality}).") # Komentar ini
                 return combined_image, img_byte_arr.getvalue(), product_name_raw + ".jpg"
             else:
                 current_quality -= quality_step
-                st.info(f"Produk '{product_name_raw}': Ukuran {file_size / (1024*1024):.2f} MB, mencoba kualitas {current_quality}...")
+                # st.info(f"Produk '{product_name_raw}': Ukuran {file_size / (1024*1024):.2f} MB, mencoba kualitas {current_quality}...") # Komentar ini
 
-        st.warning(f"Produk '{product_name_raw}' masih di atas 1MB ({file_size / (1024*1024):.2f} MB) meskipun kualitas sudah diturunkan maksimal. Pertimbangkan resolusi gambar sumber.")
+        # st.warning(f"Produk '{product_name_raw}' masih di atas 1MB ({file_size / (1024*1024):.2f} MB) meskipun kualitas sudah diturunkan maksimal. Pertimbangkan resolusi gambar sumber.") # Komentar ini
         return combined_image, img_byte_arr.getvalue(), product_name_raw + ".jpg"
 
     except Exception as e:
@@ -160,31 +162,51 @@ if st.button("Mulai Penggabungan dan Optimasi"):
     elif not uploaded_watermark:
         st.error("Mohon unggah file watermark terlebih dahulu.")
     else:
-        st.write("Memulai pemrosesan gambar...")
-        with st.spinner("Sedang memproses gambar, harap tunggu..."):
-            target_size_bytes = 1 * 1024 * 1024
+        st.write("Memulai pemrosesan gambar... Ini mungkin memerlukan waktu beberapa saat jika ada banyak gambar.")
+        
+        # Buffer untuk menyimpan file ZIP
+        zip_buffer = io.BytesIO()
+        
+        # Buat objek ZipFile
+        with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zf:
+            with st.spinner("Sedang memproses gambar dan mengemasnya dalam file ZIP, harap tunggu..."):
+                target_size_bytes = 1 * 1024 * 1024 # 1 MB
 
-            processed_images_data = []
+                # List untuk menyimpan informasi status pemrosesan
+                status_messages = []
 
-            for i, product_file in enumerate(uploaded_products):
-                st.subheader(f"Memproses Produk: {product_file.name}")
-                processed_pil_image, processed_bytes, output_filename = process_single_image(
-                    background_image_pil, product_file, watermark_image_pil, target_size_bytes
-                )
-
-                if processed_pil_image and processed_bytes:
-                    st.image(processed_pil_image, caption=f"Hasil untuk {output_filename}", use_column_width=True)
-                    st.download_button(
-                        label=f"Unduh {output_filename}",
-                        data=processed_bytes,
-                        file_name=output_filename,
-                        mime="image/jpeg"
+                for i, product_file in enumerate(uploaded_products):
+                    st.subheader(f"Memproses Produk: {product_file.name}")
+                    processed_pil_image, processed_bytes, output_filename = process_single_image(
+                        background_image_pil, product_file, watermark_image_pil, target_size_bytes
                     )
-                    processed_images_data.append((processed_pil_image, processed_bytes, output_filename))
-                else:
-                    st.error(f"Gagal memproses {product_file.name}")
 
-            if processed_images_data:
-                st.success("Semua gambar berhasil diproses!")
-            else:
-                st.warning("Tidak ada gambar yang berhasil diproses.")
+                    if processed_pil_image and processed_bytes:
+                        # Tampilkan gambar individual (opsional, bisa dihapus jika hanya ingin unduh ZIP)
+                        st.image(processed_pil_image, caption=f"Hasil untuk {output_filename}", use_column_width=True)
+                        
+                        # Tambahkan gambar ke dalam ZIP
+                        zf.writestr(output_filename, processed_bytes)
+                        
+                        # Simpan pesan status
+                        status_messages.append(f"✅ '{output_filename}' berhasil diproses.")
+                    else:
+                        status_messages.append(f"❌ Gagal memproses '{product_file.name}'.")
+
+            # Tampilkan ringkasan status setelah semua selesai
+            for msg in status_messages:
+                st.write(msg)
+
+        # Setelah loop selesai dan ZIP file sudah ditutup
+        if status_messages: # Pastikan ada sesuatu yang diproses
+            zip_buffer.seek(0) # Kembali ke awal buffer
+            st.success("Semua gambar berhasil diproses dan dikemas dalam file ZIP!")
+            
+            st.download_button(
+                label="Unduh Semua Gambar (ZIP)",
+                data=zip_buffer.getvalue(),
+                file_name="hasil_gambar_produk.zip",
+                mime="application/zip"
+            )
+        else:
+            st.warning("Tidak ada gambar yang berhasil diproses.")
