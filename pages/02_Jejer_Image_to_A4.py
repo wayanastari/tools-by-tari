@@ -4,16 +4,11 @@ import io
 import os
 
 def create_a4_grid_pdf(uploaded_files_data):
-    """
-    Processes a list of image files, arranges them into a 3x3 grid on A4 pages,
-    and returns a multi-page PDF as bytes. Landscape images are rotated,
-    images are scaled, and filenames are displayed above each image.
-    """
     if not uploaded_files_data:
         st.error("Mohon unggah gambar.")
         return None
 
-    # A4 dimensions in pixels (at 300 DPI)
+    # A4 dimensions in pixels (at 300 DPI) for PORTRAIT
     a4_width_px = int(8.27 * 300)
     a4_height_px = int(11.69 * 300)
 
@@ -24,39 +19,83 @@ def create_a4_grid_pdf(uploaded_files_data):
     border_color = (0, 0, 0) # Black border
     text_color = (0, 0, 0)   # Black text
 
-    # Attempt to load a bold font (Arial Bold is common on Windows)
-    # Fallback to default Pillow font if not found.
+    # Attempt to load a bold font
     try:
         font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-        font_size = 40
-        font = ImageFont.truetype(font_path, font_size)
+        if not os.path.exists(font_path):
+            font_path = "arialbd.ttf" # Common Arial Bold on Windows
+            if not os.path.exists(font_path): # Fallback if specific paths fail
+                st.warning("Font bold ('DejaVuSans-Bold.ttf' or 'arialbd.ttf') tidak ditemukan. Menggunakan font default Pillow.")
+                font_size = 25 # Slightly smaller font for 3 columns
+                font = ImageFont.load_default()
+                text_color = (100, 100, 100) # Slightly lighter grey for default font
+            else:
+                font_size = 35 # Adjusted font size for 3 columns
+                font = ImageFont.truetype(font_path, font_size)
+        else:
+            font_size = 35 # Adjusted font size for 3 columns
+            font = ImageFont.truetype(font_path, font_size)
     except IOError:
-        st.warning("Font bold ('arialbd.ttf') tidak ditemukan. Menggunakan font default Pillow.")
-        font_size = 30
+        st.warning("Terjadi masalah saat memuat font. Menggunakan font default Pillow.")
+        font_size = 25
         font = ImageFont.load_default()
         text_color = (100, 100, 100) # Slightly lighter grey for default font
 
     # Estimate height needed for text (filename)
-    text_height_estimate = font_size + 10
+    text_area_height_needed = font_size + 10 
 
-    # Calculate dimensions for each image slot in the 3x3 grid
-    slot_width = (a4_width_px - (2 * margin) - (2 * padding)) // 3
-    slot_height = (a4_height_px - (2 * margin) - (2 * padding)) // 3
+    # --- Calculation for 3 Columns x 2 Rows with TALL Rectangular Slots on PORTRAIT A4 ---
+    # We need 3 columns. The available width for images (minus margins and padding between columns)
+    available_width_for_images = a4_width_px - (2 * margin) - (2 * padding)
+    
+    # Max width for an image in one of the 3 columns
+    max_image_width_per_col = available_width_for_images // 3
 
-    # Calculate max dimensions for the image *within* its slot, accounting for border and text
-    img_max_width = slot_width - (2 * border_width)
-    img_max_height = slot_height - (2 * border_width) - text_height_estimate
+    # We want the slots to be taller than wide. Let's aim for a common mobile screenshot aspect ratio (e.g., 9:16 or similar tall ratio)
+    # We will maximize the height of the image based on its aspect ratio and the available height,
+    # ensuring its width fits within max_image_width_per_col.
+
+    # Total vertical space available for 2 rows of images + text
+    available_height_for_images = a4_height_px - (2 * margin) - (1 * padding)
+    max_image_height_per_row_area = available_height_for_images // 2
+
+    # Calculate actual max dimensions for the image *within* its slot
+    # We'll use the max_image_width_per_col as the constraining factor first
+    img_max_width = max_image_width_per_col - (2 * border_width) 
+    
+    # Assume a target aspect ratio for height relative to width (e.g., 16:9 for portrait phone screens)
+    # This means height = width * (16/9)
+    target_height_from_width = int(img_max_width * (16/9.0)) # Make it significantly taller
+
+    # The effective height of the image slot includes the image itself, border, and text area
+    effective_slot_height_needed = target_height_from_width + (2 * border_width) + text_area_height_needed
+
+    # If the calculated effective slot height is too big for the available row height, scale down
+    if effective_slot_height_needed > max_image_height_per_row_area:
+        # Scale down the image height to fit the row, then recalculate width
+        img_max_height = max_image_height_per_row_area - (2 * border_width) - text_area_height_needed
+        img_max_width = int(img_max_height * (9.0/16.0)) # Recalculate width based on new height and aspect ratio
+        
+        # Recalculate effective slot height with new img_max_height
+        effective_slot_height_needed = img_max_height + (2 * border_width) + text_area_height_needed
+    else:
+        img_max_height = target_height_from_width
+
+    # The actual 'drawn' slot width will be based on img_max_width plus borders
+    actual_drawn_slot_width = img_max_width + (2 * border_width)
+    actual_drawn_slot_height = img_max_height + (2 * border_width) + text_area_height_needed
+
 
     all_pdf_pages = [] # List to store each generated A4 Image object
 
-    # Process images in batches of 9 for each A4 page
-    for page_idx in range(0, len(uploaded_files_data), 9):
-        # Create a new blank A4 canvas for the current page
+    # Process images in batches of 6 for each A4 page (3 columns x 2 rows = 6 images)
+    for page_idx in range(0, len(uploaded_files_data), 6):
+        # Create a new blank A4 canvas for the current page (portrait)
         a4_canvas = Image.new('RGB', (a4_width_px, a4_height_px), 'white')
         draw = ImageDraw.Draw(a4_canvas)
 
-        # Get the batch of up to 9 files for the current page
-        current_batch_files = uploaded_files_data[page_idx : page_idx + 9]
+        # Get the batch of up to 6 files for the current page
+        current_batch_files = uploaded_files_data[page_idx : page_idx + 6]
         
         processed_items_for_page = []
         for uploaded_file_obj in current_batch_files:
@@ -66,11 +105,11 @@ def create_a4_grid_pdf(uploaded_files_data):
             base_filename = os.path.basename(uploaded_file_obj.name)
             filename_without_ext = os.path.splitext(base_filename)[0]
 
-            # Rotate landscape images to portrait
+            # Rotate landscape images to portrait to fit rectangular slots well
             if img.width > img.height:
                 img = img.rotate(90, expand=True)
 
-            # Resize image to fit within the calculated max dimensions while maintaining aspect ratio
+            # Resize image to fit within the calculated img_max_width/height while maintaining aspect ratio
             if img.width / img.height > img_max_width / img_max_height:
                 new_width = img_max_width
                 new_height = int(img.height * (img_max_width / img.width))
@@ -82,39 +121,47 @@ def create_a4_grid_pdf(uploaded_files_data):
             processed_items_for_page.append((img, filename_without_ext))
 
         # Place images and text on the current A4 canvas
-        for i in range(3): # Row
-            for j in range(3): # Column
-                img_index_in_batch = i * 3 + j
+        # Grid is 2 rows (i), 3 columns (j)
+        for i in range(2): # Row (0 or 1)
+            for j in range(3): # Column (0, 1, or 2)
+                img_index_in_batch = i * 3 + j # Correct index for 2 rows, 3 columns
                 if img_index_in_batch < len(processed_items_for_page):
                     current_img, filename = processed_items_for_page[img_index_in_batch]
 
-                    # Calculate top-left corner of the current slot
-                    slot_x_start = margin + j * (slot_width + padding)
-                    slot_y_start = margin + i * (slot_height + padding)
+                    # Calculate top-left corner of the "grid cell"
+                    grid_cell_x_start = margin + j * (actual_drawn_slot_width + padding)
+                    grid_cell_y_start = margin + i * (actual_drawn_slot_height + padding)
 
-                    # Draw border around the slot
+                    # Ensure we stay within A4 bounds, especially for the last item/row/column
+                    if grid_cell_x_start + actual_drawn_slot_width > a4_width_px - margin:
+                        grid_cell_x_start = a4_width_px - margin - actual_drawn_slot_width
+                    if grid_cell_y_start + actual_drawn_slot_height > a4_height_px - margin:
+                        grid_cell_y_start = a4_height_px - margin - actual_drawn_slot_height
+
+
+                    # Draw border around the actual rectangular content area
                     border_coords = (
-                        slot_x_start,
-                        slot_y_start,
-                        slot_x_start + slot_width,
-                        slot_y_start + slot_height
+                        grid_cell_x_start,
+                        grid_cell_y_start,
+                        grid_cell_x_start + actual_drawn_slot_width,
+                        grid_cell_y_start + actual_drawn_slot_height
                     )
                     draw.rectangle(border_coords, outline=border_color, width=border_width)
 
-                    # Calculate text position (centered horizontally within the slot, at the top)
+                    # Calculate image position (centered horizontally within its drawn slot)
+                    img_x = grid_cell_x_start + (actual_drawn_slot_width - current_img.width) // 2
+                    img_y = grid_cell_y_start + border_width # Small offset from top border of drawn slot
+
+                    a4_canvas.paste(current_img, (img_x, img_y))
+                    
+                    # Calculate text position (centered horizontally, directly below the image)
                     bbox = draw.textbbox((0,0), filename, font=font)
                     text_width = bbox[2] - bbox[0]
-                    
-                    text_x = slot_x_start + (slot_width - text_width) // 2
-                    text_y = slot_y_start + border_width + 5 # Small offset from border
+
+                    text_x = grid_cell_x_start + (actual_drawn_slot_width - text_width) // 2
+                    text_y = img_y + current_img.height + 5 
 
                     draw.text((text_x, text_y), filename, fill=text_color, font=font)
-
-                    # Calculate image position (centered within the remaining space of the slot, below the text)
-                    center_x = slot_x_start + (slot_width - current_img.width) // 2
-                    center_y = slot_y_start + text_height_estimate + border_width + 5 
-
-                    a4_canvas.paste(current_img, (center_x, center_y))
         
         all_pdf_pages.append(a4_canvas) # Add the completed A4 page to the list
 
@@ -124,17 +171,17 @@ def create_a4_grid_pdf(uploaded_files_data):
         first_page = all_pdf_pages[0]
         remaining_pages = all_pdf_pages[1:] if len(all_pdf_pages) > 1 else []
         first_page.save(pdf_buffer, format="PDF", save_all=True, append_images=remaining_pages)
-    
+        
     pdf_bytes = pdf_buffer.getvalue()
     return pdf_bytes
 
 # --- Streamlit UI ---
-st.set_page_config(layout="centered", page_title="Jejer Gambar ke A4 Multi-Page")
+st.set_page_config(layout="centered", page_title="Jejer Bukti Transfer ke A4")
 
-st.title("Jejer Gambar ke Lembar A4 (3x3 Grid per Halaman)")
+st.title("Jejer Gambar Bukti Transfer ke Lembar A4 (Portrait, 3 Kolom x 2 Baris)")
 st.write("""
-Unggah gambar Kamu. Setiap 9 gambar akan ditempatkan dalam satu halaman A4 dengan tata letak grid 3x3.
-Gambar landscape akan otomatis diputar, gambar kecil akan di-auto-scale, dan **nama file (tanpa ekstensi) akan ditampilkan di atas setiap gambar dalam huruf tebal dan lebih besar**.
+Unggah gambar bukti transfer Kamu. Setiap 6 gambar akan ditempatkan dalam satu halaman A4 dengan tata letak grid **3 kolom x 2 baris** (total 6 gambar) dalam orientasi **portrait**.
+**Setiap gambar akan berada dalam kotak persegi panjang (lebih tinggi dari lebar)**. Gambar landscape akan otomatis diputar agar pas, gambar akan di-auto-scale, dan **nama file (tanpa ekstensi) akan ditampilkan di bawah setiap gambar**.
 Setelah diproses, Kamu bisa mengunduh hasilnya dalam format PDF multi-halaman.
 """)
 
@@ -147,7 +194,7 @@ uploaded_files = st.file_uploader(
 if uploaded_files:
     st.subheader("Pratinjau Gambar yang Diunggah:")
     # Display preview in columns
-    cols = st.columns(3)
+    cols = st.columns(3) # Use 3 columns for preview
     for idx, file in enumerate(uploaded_files):
         base_filename_preview = os.path.basename(file.name)
         filename_without_ext_preview = os.path.splitext(base_filename_preview)[0]
@@ -163,7 +210,7 @@ if uploaded_files:
                 st.download_button(
                     label="Unduh PDF A4 (Multi-Halaman)",
                     data=pdf_data,
-                    file_name="gambar_a4_grid_multi_page.pdf",
+                    file_name="bukti_transfer_a4_grid_portrait_3col_2row.pdf",
                     mime="application/pdf"
                 )
                 st.info("Untuk mencetak, unduh PDF lalu buka filenya. Setelah itu cetak seperti biasa.")
