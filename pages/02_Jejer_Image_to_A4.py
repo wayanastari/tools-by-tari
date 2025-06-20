@@ -8,9 +8,9 @@ def create_a4_grid_pdf(uploaded_files_data):
         st.error("Mohon unggah gambar.")
         return None
 
-    # A4 dimensions in pixels (at 300 DPI) for LANDSCAPE
-    a4_height_px = int(8.27 * 300) # This becomes height in landscape (shorter side)
-    a4_width_px = int(11.69 * 300) # This becomes width in landscape (longer side)
+    # A4 dimensions in pixels (at 300 DPI) for PORTRAIT
+    a4_width_px = int(8.27 * 300)
+    a4_height_px = int(11.69 * 300)
 
     # Margins and padding for the grid layout
     margin = 50  # Margin around the entire grid on the page
@@ -19,13 +19,12 @@ def create_a4_grid_pdf(uploaded_files_data):
     border_color = (0, 0, 0) # Black border
     text_color = (0, 0, 0)   # Black text
 
-    # Attempt to load a bold font (DejaVuSans-Bold is common on Linux/WSL, adjust for other OS)
-    # Fallback to default Pillow font if not found.
+    # Attempt to load a bold font
     try:
         font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
         if not os.path.exists(font_path):
             font_path = "arialbd.ttf" # Common Arial Bold on Windows
-            if not os.path.exists(font_path): # Fallback for other systems
+            if not os.path.exists(font_path): # Fallback if specific paths fail
                 st.warning("Font bold ('DejaVuSans-Bold.ttf' or 'arialbd.ttf') tidak ditemukan. Menggunakan font default Pillow.")
                 font_size = 30
                 font = ImageFont.load_default()
@@ -45,9 +44,11 @@ def create_a4_grid_pdf(uploaded_files_data):
     # Estimate height needed for text (filename)
     text_height_estimate = font_size + 10
 
-    # Calculate dimensions for each image slot in the 2x3 grid (2 rows, 3 columns)
-    slot_width = (a4_width_px - (2 * margin) - (2 * padding)) // 3 # 3 columns
-    slot_height = (a4_height_px - (2 * margin) - (1 * padding)) // 2 # 2 rows
+    # Calculate dimensions for each image slot in the 3x2 grid (3 rows, 2 columns)
+    # We want rectangular slots, taller than wide, on a portrait page.
+    # So, width will be 1/2 of available width, height will be 1/3 of available height.
+    slot_width = (a4_width_px - (2 * margin) - (1 * padding)) // 2 # 2 columns
+    slot_height = (a4_height_px - (2 * margin) - (2 * padding)) // 3 # 3 rows
 
     # Calculate max dimensions for the image *within* its slot, accounting for border and text
     img_max_width = slot_width - (2 * border_width)
@@ -55,9 +56,9 @@ def create_a4_grid_pdf(uploaded_files_data):
 
     all_pdf_pages = [] # List to store each generated A4 Image object
 
-    # Process images in batches of 6 for each A4 page (2 rows x 3 columns)
+    # Process images in batches of 6 for each A4 page (3 rows x 2 columns)
     for page_idx in range(0, len(uploaded_files_data), 6):
-        # Create a new blank A4 canvas for the current page (landscape)
+        # Create a new blank A4 canvas for the current page (portrait)
         a4_canvas = Image.new('RGB', (a4_width_px, a4_height_px), 'white')
         draw = ImageDraw.Draw(a4_canvas)
 
@@ -72,15 +73,12 @@ def create_a4_grid_pdf(uploaded_files_data):
             base_filename = os.path.basename(uploaded_file_obj.name)
             filename_without_ext = os.path.splitext(base_filename)[0]
 
-            # We are fitting landscape images into a landscape slot,
-            # so usually no rotation is needed unless an input image is portrait
-            # and you specifically want it rotated to fit the wider slot.
-            # For "bukti transfer" (often landscape), no rotation needed here.
-            # If a portrait image is uploaded and needs rotation, you can re-add:
-            # if img.width < img.height and img.width > img_max_width:
-            #     img = img.rotate(90, expand=True)
+            # Rotate landscape images to portrait to fit rectangular slots well
+            if img.width > img.height:
+                img = img.rotate(90, expand=True)
 
             # Resize image to fit within the calculated max dimensions while maintaining aspect ratio
+            # This logic correctly scales to fit the taller rectangular slot.
             if img.width / img.height > img_max_width / img_max_height:
                 new_width = img_max_width
                 new_height = int(img.height * (img_max_width / img.width))
@@ -92,10 +90,10 @@ def create_a4_grid_pdf(uploaded_files_data):
             processed_items_for_page.append((img, filename_without_ext))
 
         # Place images and text on the current A4 canvas
-        # Grid is 2 rows (i), 3 columns (j)
-        for i in range(2): # Row (0 or 1)
-            for j in range(3): # Column (0, 1, or 2)
-                img_index_in_batch = i * 3 + j # Now 3 columns per row
+        # Grid is 3 rows (i), 2 columns (j)
+        for i in range(3): # Row (0, 1, or 2)
+            for j in range(2): # Column (0 or 1)
+                img_index_in_batch = i * 2 + j # Correct index for 3 rows, 2 columns
                 if img_index_in_batch < len(processed_items_for_page):
                     current_img, filename = processed_items_for_page[img_index_in_batch]
 
@@ -103,7 +101,7 @@ def create_a4_grid_pdf(uploaded_files_data):
                     slot_x_start = margin + j * (slot_width + padding)
                     slot_y_start = margin + i * (slot_height + padding)
 
-                    # Draw border around the slot
+                    # Draw border around the slot (rectangular)
                     border_coords = (
                         slot_x_start,
                         slot_y_start,
@@ -112,18 +110,21 @@ def create_a4_grid_pdf(uploaded_files_data):
                     )
                     draw.rectangle(border_coords, outline=border_color, width=border_width)
 
-                    # Calculate image position (centered horizontally within the slot, at the top)
+                    # Calculate image position (centered within the remaining space of the slot, below the text)
+                    # Text is at the bottom, so image is placed from top
                     img_x = slot_x_start + (slot_width - current_img.width) // 2
                     img_y = slot_y_start + border_width # Small offset from border
 
                     a4_canvas.paste(current_img, (img_x, img_y))
                     
-                    # Calculate text position (centered horizontally within the slot, below the image)
+                    # Calculate text position (centered horizontally within the slot, at the bottom)
                     bbox = draw.textbbox((0,0), filename, font=font)
                     text_width = bbox[2] - bbox[0]
-                    
+                    text_height = bbox[3] - bbox[1] # Actual text height
+
                     text_x = slot_x_start + (slot_width - text_width) // 2
-                    text_y = img_y + current_img.height + 5 # 5 pixels below image
+                    # Position text at the bottom of the slot, above the bottom border
+                    text_y = slot_y_start + slot_height - border_width - text_height - 5 
 
                     draw.text((text_x, text_y), filename, fill=text_color, font=font)
         
@@ -140,12 +141,12 @@ def create_a4_grid_pdf(uploaded_files_data):
     return pdf_bytes
 
 # --- Streamlit UI ---
-st.set_page_config(layout="centered", page_title="Jejer Gambar Bukti Transfer ke A4")
+st.set_page_config(layout="centered", page_title="Jejer Bukti Transfer ke A4")
 
-st.title("Jejer Gambar Bukti Transfer ke Lembar A4 (Landscape, 2 Baris x 3 Kolom)")
+st.title("Jejer Gambar Bukti Transfer ke Lembar A4 (Portrait, 3 Baris x 2 Kolom)")
 st.write("""
-Unggah gambar bukti transfer Kamu. Setiap 6 gambar akan ditempatkan dalam satu halaman A4 dengan tata letak grid **2x3** (dua baris, tiga kolom) dalam orientasi **landscape**.
-Gambar akan di-auto-scale agar pas, dan **nama file (tanpa ekstensi) akan ditampilkan di bawah setiap gambar dalam huruf tebal dan lebih besar**.
+Unggah gambar bukti transfer Kamu. Setiap 6 gambar akan ditempatkan dalam satu halaman A4 dengan tata letak grid **3x2** (tiga baris, dua kolom) dalam orientasi **portrait**.
+**Setiap gambar akan berada dalam kotak persegi panjang (lebih tinggi dari lebar)**, ideal untuk format bukti transfer. Gambar landscape akan otomatis diputar agar pas, gambar akan di-auto-scale, dan **nama file (tanpa ekstensi) akan ditampilkan di bawah setiap gambar dalam huruf tebal dan lebih besar**.
 Setelah diproses, Kamu bisa mengunduh hasilnya dalam format PDF multi-halaman.
 """)
 
@@ -174,7 +175,7 @@ if uploaded_files:
                 st.download_button(
                     label="Unduh PDF A4 (Multi-Halaman)",
                     data=pdf_data,
-                    file_name="bukti_transfer_a4_grid_landscape.pdf",
+                    file_name="bukti_transfer_a4_grid_portrait_rectangular.pdf",
                     mime="application/pdf"
                 )
                 st.info("Untuk mencetak, unduh PDF lalu buka filenya. Setelah itu cetak seperti biasa.")
