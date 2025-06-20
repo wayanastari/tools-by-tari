@@ -25,13 +25,23 @@ def create_a4_grid_pdf(uploaded_files_data):
         font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
         if not os.path.exists(font_path):
             font_path = "arialbd.ttf" # Common Arial Bold on Windows
-        font_size = 40
-        font = ImageFont.truetype(font_path, font_size)
+            if not os.path.exists(font_path): # Fallback for other systems
+                st.warning("Font bold ('DejaVuSans-Bold.ttf' or 'arialbd.ttf') tidak ditemukan. Menggunakan font default Pillow.")
+                font_size = 30
+                font = ImageFont.load_default()
+                text_color = (100, 100, 100) # Slightly lighter grey for default font
+            else:
+                font_size = 40
+                font = ImageFont.truetype(font_path, font_size)
+        else:
+            font_size = 40
+            font = ImageFont.truetype(font_path, font_size)
     except IOError:
-        st.warning("Font bold ('DejaVuSans-Bold.ttf' or 'arialbd.ttf') tidak ditemukan. Menggunakan font default Pillow.")
+        st.warning("Terjadi masalah saat memuat font. Menggunakan font default Pillow.")
         font_size = 30
         font = ImageFont.load_default()
         text_color = (100, 100, 100) # Slightly lighter grey for default font
+
 
     # Estimate height needed for text (filename)
     text_height_estimate = font_size + 10
@@ -128,12 +138,12 @@ def create_a4_grid_pdf(uploaded_files_data):
     return pdf_bytes
 
 # --- Streamlit UI ---
-st.set_page_config(layout="centered", page_title="Jejer Gambar ke A4 Multi-Page (Portrait)")
+st.set_page_config(layout="centered", page_title="Jejer Gambar Bukti Transfer ke A4")
 
-st.title("Jejer Gambar ke Lembar A4 (Portrait, 3x2 Grid per Halaman)")
+st.title("Jejer Gambar Bukti Transfer ke Lembar A4 (Portrait, 3x2 Grid per Halaman)")
 st.write("""
-Unggah gambar Kamu. Setiap 6 gambar akan ditempatkan dalam satu halaman A4 dengan tata letak grid **3x2** (tiga baris, dua kolom) dalam orientasi **portrait**.
-Gambar landscape akan otomatis diputar, gambar akan di-auto-scale, dan **nama file (tanpa ekstensi) akan ditampilkan di bawah setiap gambar dalam huruf tebal dan lebih besar**.
+Unggah gambar bukti transfer Kamu. Setiap 6 gambar akan ditempatkan dalam satu halaman A4 dengan tata letak grid **3x2** (tiga baris, dua kolom) dalam orientasi **portrait**.
+Gambar landscape (seperti bukti transfer) akan otomatis diputar agar pas, gambar akan di-auto-scale, dan **nama file (tanpa ekstensi) akan ditampilkan di bawah setiap gambar dalam huruf tebal dan lebih besar**.
 Setelah diproses, Kamu bisa mengunduh hasilnya dalam format PDF multi-halaman.
 """)
 
@@ -146,7 +156,7 @@ uploaded_files = st.file_uploader(
 if uploaded_files:
     st.subheader("Pratinjau Gambar yang Diunggah:")
     # Display preview in columns
-    cols = st.columns(3)
+    cols = st.columns(3) # Still use 3 columns for cleaner preview layout
     for idx, file in enumerate(uploaded_files):
         base_filename_preview = os.path.basename(file.name)
         filename_without_ext_preview = os.path.splitext(base_filename_preview)[0]
@@ -162,7 +172,7 @@ if uploaded_files:
                 st.download_button(
                     label="Unduh PDF A4 (Multi-Halaman)",
                     data=pdf_data,
-                    file_name="gambar_a4_grid_multi_page_portrait.pdf",
+                    file_name="bukti_transfer_a4_grid_multi_page.pdf",
                     mime="application/pdf"
                 )
                 st.info("Untuk mencetak, unduh PDF lalu buka filenya. Setelah itu cetak seperti biasa.")
