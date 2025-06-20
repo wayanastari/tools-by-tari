@@ -8,9 +8,9 @@ def create_a4_grid_pdf(uploaded_files_data):
         st.error("Mohon unggah gambar.")
         return None
 
-    # A4 dimensions in pixels (at 300 DPI) for LANDSCAPE
-    a4_height_px = int(8.27 * 300) # This becomes width in landscape
-    a4_width_px = int(11.69 * 300) # This becomes height in landscape
+    # A4 dimensions in pixels (at 300 DPI) for PORTRAIT
+    a4_width_px = int(8.27 * 300)
+    a4_height_px = int(11.69 * 300)
 
     # Margins and padding for the grid layout
     margin = 50  # Margin around the entire grid on the page
@@ -22,9 +22,8 @@ def create_a4_grid_pdf(uploaded_files_data):
     # Attempt to load a bold font (DejaVuSans-Bold is common on Linux/WSL, adjust for other OS)
     # Fallback to default Pillow font if not found.
     try:
-        # Common path for DejaVuSans-Bold on Linux systems, adjust if running on different OS
         font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-        if not os.path.exists(font_path): # Try a common Windows path if Linux path doesn't exist
+        if not os.path.exists(font_path):
             font_path = "arialbd.ttf" # Common Arial Bold on Windows
         font_size = 40
         font = ImageFont.truetype(font_path, font_size)
@@ -37,10 +36,9 @@ def create_a4_grid_pdf(uploaded_files_data):
     # Estimate height needed for text (filename)
     text_height_estimate = font_size + 10
 
-    # Calculate dimensions for each image slot in the 2x3 grid (2 rows, 3 columns)
-    # For landscape: width is longer, so 3 columns across, 2 rows down
-    slot_width = (a4_width_px - (2 * margin) - (2 * padding)) // 3 # 3 columns
-    slot_height = (a4_height_px - (2 * margin) - (1 * padding)) // 2 # 2 rows
+    # Calculate dimensions for each image slot in the 3x2 grid (3 rows, 2 columns)
+    slot_width = (a4_width_px - (2 * margin) - (1 * padding)) // 2 # 2 columns
+    slot_height = (a4_height_px - (2 * margin) - (2 * padding)) // 3 # 3 rows
 
     # Calculate max dimensions for the image *within* its slot, accounting for border and text
     # Text is below the image, so it consumes height from the slot
@@ -49,9 +47,9 @@ def create_a4_grid_pdf(uploaded_files_data):
 
     all_pdf_pages = [] # List to store each generated A4 Image object
 
-    # Process images in batches of 6 for each A4 page (2 rows x 3 columns)
+    # Process images in batches of 6 for each A4 page (3 rows x 2 columns)
     for page_idx in range(0, len(uploaded_files_data), 6):
-        # Create a new blank A4 canvas for the current page (landscape)
+        # Create a new blank A4 canvas for the current page (portrait)
         a4_canvas = Image.new('RGB', (a4_width_px, a4_height_px), 'white')
         draw = ImageDraw.Draw(a4_canvas)
 
@@ -66,15 +64,15 @@ def create_a4_grid_pdf(uploaded_files_data):
             base_filename = os.path.basename(uploaded_file_obj.name)
             filename_without_ext = os.path.splitext(base_filename)[0]
 
+            # Rotate landscape images to portrait if the image itself is landscape
+            if img.width > img.height:
+                img = img.rotate(90, expand=True)
+
             # Resize image to fit within the calculated max dimensions while maintaining aspect ratio
-            # No automatic rotation for landscape input, as the whole page is landscape
-            # Users should ensure images are oriented correctly or rotate manually before upload if needed.
-            
-            # If the image is wider than its allowed slot, scale by width
             if img.width / img.height > img_max_width / img_max_height:
                 new_width = img_max_width
                 new_height = int(img.height * (img_max_width / img.width))
-            else: # If the image is taller than its allowed slot, scale by height
+            else:
                 new_height = img_max_height
                 new_width = int(img.width * (img_max_height / img.height))
 
@@ -82,10 +80,10 @@ def create_a4_grid_pdf(uploaded_files_data):
             processed_items_for_page.append((img, filename_without_ext))
 
         # Place images and text on the current A4 canvas
-        # Grid is 2 rows (i), 3 columns (j)
-        for i in range(2): # Row
-            for j in range(3): # Column
-                img_index_in_batch = i * 3 + j
+        # Grid is 3 rows (i), 2 columns (j)
+        for i in range(3): # Row (0, 1, or 2)
+            for j in range(2): # Column (0 or 1)
+                img_index_in_batch = i * 2 + j # Now 2 columns per row
                 if img_index_in_batch < len(processed_items_for_page):
                     current_img, filename = processed_items_for_page[img_index_in_batch]
 
@@ -130,12 +128,12 @@ def create_a4_grid_pdf(uploaded_files_data):
     return pdf_bytes
 
 # --- Streamlit UI ---
-st.set_page_config(layout="centered", page_title="Jejer Gambar ke A4 Multi-Page (Landscape)")
+st.set_page_config(layout="centered", page_title="Jejer Gambar ke A4 Multi-Page (Portrait)")
 
-st.title("Jejer Gambar ke Lembar A4 (Landscape, 2x3 Grid per Halaman)")
+st.title("Jejer Gambar ke Lembar A4 (Portrait, 3x2 Grid per Halaman)")
 st.write("""
-Unggah gambar Kamu. Setiap 6 gambar akan ditempatkan dalam satu halaman A4 dengan tata letak grid **2x3** (dua baris, tiga kolom) dalam orientasi **landscape**.
-Gambar akan di-auto-scale, dan **nama file (tanpa ekstensi) akan ditampilkan di bawah setiap gambar dalam huruf tebal dan lebih besar**.
+Unggah gambar Kamu. Setiap 6 gambar akan ditempatkan dalam satu halaman A4 dengan tata letak grid **3x2** (tiga baris, dua kolom) dalam orientasi **portrait**.
+Gambar landscape akan otomatis diputar, gambar akan di-auto-scale, dan **nama file (tanpa ekstensi) akan ditampilkan di bawah setiap gambar dalam huruf tebal dan lebih besar**.
 Setelah diproses, Kamu bisa mengunduh hasilnya dalam format PDF multi-halaman.
 """)
 
@@ -164,7 +162,7 @@ if uploaded_files:
                 st.download_button(
                     label="Unduh PDF A4 (Multi-Halaman)",
                     data=pdf_data,
-                    file_name="gambar_a4_grid_multi_page_landscape.pdf",
+                    file_name="gambar_a4_grid_multi_page_portrait.pdf",
                     mime="application/pdf"
                 )
                 st.info("Untuk mencetak, unduh PDF lalu buka filenya. Setelah itu cetak seperti biasa.")
