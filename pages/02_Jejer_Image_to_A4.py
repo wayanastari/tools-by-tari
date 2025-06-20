@@ -3,6 +3,44 @@ from PIL import Image, ImageDraw, ImageFont
 import io
 import os
 
+# Function to wrap text
+def wrap_text(text, font, max_width):
+    lines = []
+    if not text:
+        return lines
+    
+    words = text.split(' ')
+    current_line = []
+    
+    for word in words:
+        # Check if adding the next word exceeds max_width
+        test_line = ' '.join(current_line + [word])
+        bbox = ImageDraw.Draw(Image.new('RGB', (1,1))).textbbox((0,0), test_line, font=font)
+        test_width = bbox[2] - bbox[0]
+        
+        if test_width <= max_width:
+            current_line.append(word)
+        else:
+            if current_line: # If there's already content, add it as a line
+                lines.append(' '.join(current_line))
+            current_line = [word] # Start new line with the current word
+            
+            # If a single word is wider than max_width, it will still go on its own line
+            # This doesn't break words, just handles full words. For breaking long words,
+            # more advanced logic is needed, but for filenames, full word wrap is usually sufficient.
+            test_line_single_word_bbox = ImageDraw.Draw(Image.new('RGB', (1,1))).textbbox((0,0), word, font=font)
+            if (test_line_single_word_bbox[2] - test_line_single_word_bbox[0]) > max_width:
+                 # If a single word is too long, we might need to truncate or add ellipsis.
+                 # For now, it will just draw past the limit. A more robust solution would
+                 # try to split the word or add "..."
+                 pass # Simple wrap doesn't split words.
+
+    if current_line: # Add any remaining words as the last line
+        lines.append(' '.join(current_line))
+    
+    return lines
+
+
 def create_a4_grid_pdf(uploaded_files_data):
     if not uploaded_files_data:
         st.error("Mohon unggah gambar.")
@@ -41,49 +79,46 @@ def create_a4_grid_pdf(uploaded_files_data):
         font = ImageFont.load_default()
         text_color = (100, 100, 100) # Slightly lighter grey for default font
 
-    # Estimate height needed for text (filename)
-    text_area_height_needed = font_size + 10 
-
-    # --- Calculation for 3 Columns x 2 Rows with TALL Rectangular Slots on PORTRAIT A4 ---
-    # We need 3 columns. The available width for images (minus margins and padding between columns)
-    available_width_for_images = a4_width_px - (2 * margin) - (2 * padding)
-    
+    # Calculation for 3 Columns x 2 Rows with TALL Rectangular Slots on PORTRAIT A4
     # Max width for an image in one of the 3 columns
-    max_image_width_per_col = available_width_for_images // 3
-
-    # We want the slots to be taller than wide. Let's aim for a common mobile screenshot aspect ratio (e.g., 9:16 or similar tall ratio)
-    # We will maximize the height of the image based on its aspect ratio and the available height,
-    # ensuring its width fits within max_image_width_per_col.
-
+    max_image_width_per_col = (a4_width_px - (2 * margin) - (2 * padding)) // 3
+    
     # Total vertical space available for 2 rows of images + text
-    available_height_for_images = a4_height_px - (2 * margin) - (1 * padding)
-    max_image_height_per_row_area = available_height_for_images // 2
+    max_image_height_per_row_area = (a4_height_px - (2 * margin) - (1 * padding)) // 2
 
-    # Calculate actual max dimensions for the image *within* its slot
-    # We'll use the max_image_width_per_col as the constraining factor first
+    # Define a target aspect ratio for the image (e.g., 9:16 for portrait phone screenshots)
+    target_aspect_ratio_width_to_height = 9 / 16.0 
+
+    # Determine img_max_width based on available column width
     img_max_width = max_image_width_per_col - (2 * border_width) 
     
-    # Assume a target aspect ratio for height relative to width (e.g., 16:9 for portrait phone screens)
-    # This means height = width * (16/9)
-    target_height_from_width = int(img_max_width * (16/9.0)) # Make it significantly taller
+    # Calculate initial img_max_height based on target aspect ratio
+    img_max_height = int(img_max_width / target_aspect_ratio_width_to_height)
 
-    # The effective height of the image slot includes the image itself, border, and text area
-    effective_slot_height_needed = target_height_from_width + (2 * border_width) + text_area_height_needed
+    # Estimate height needed for text (multiple lines will use more height)
+    # We need a dynamic estimate based on actual text length and font size,
+    # but for initial image scaling, a reasonable fixed estimate is helpful.
+    # We will refine this for actual drawing.
+    approx_text_lines = 2 # Assume max 2 lines for filename wrapping for initial height calc
+    text_line_height_estimate = font_size + 5 # height of one line of text + small gap
+    estimated_total_text_height = approx_text_lines * text_line_height_estimate + 5 # Add extra 5 for padding
 
-    # If the calculated effective slot height is too big for the available row height, scale down
-    if effective_slot_height_needed > max_image_height_per_row_area:
-        # Scale down the image height to fit the row, then recalculate width
-        img_max_height = max_image_height_per_row_area - (2 * border_width) - text_area_height_needed
-        img_max_width = int(img_max_height * (9.0/16.0)) # Recalculate width based on new height and aspect ratio
+    # Adjust img_max_height if the combined image+text area exceeds the available row height
+    if (img_max_height + (2 * border_width) + estimated_total_text_height) > max_image_height_per_row_area:
+        # If it's too tall, scale down the image height to fit
+        img_max_height = max_image_height_per_row_area - (2 * border_width) - estimated_total_text_height
+        img_max_width = int(img_max_height * target_aspect_ratio_width_to_height) # Recalculate width
         
-        # Recalculate effective slot height with new img_max_height
-        effective_slot_height_needed = img_max_height + (2 * border_width) + text_area_height_needed
-    else:
-        img_max_height = target_height_from_width
+        # Ensure img_max_width doesn't become too small or negative
+        if img_max_width < 50: # Minimum reasonable width
+            img_max_width = 50
+            img_max_height = int(img_max_width / target_aspect_ratio_width_to_height)
 
-    # The actual 'drawn' slot width will be based on img_max_width plus borders
+    # Actual dimensions of the content area (image + text + borders) within each cell
     actual_drawn_slot_width = img_max_width + (2 * border_width)
-    actual_drawn_slot_height = img_max_height + (2 * border_width) + text_area_height_needed
+    # The height will depend on actual wrapped text, so we'll recalculate text_y dynamically.
+    # For initial placement calculations of cells:
+    actual_drawn_slot_height_base = img_max_height + (2 * border_width) + estimated_total_text_height # this is a minimum height for the cell
 
 
     all_pdf_pages = [] # List to store each generated A4 Image object
@@ -129,40 +164,62 @@ def create_a4_grid_pdf(uploaded_files_data):
                     current_img, filename = processed_items_for_page[img_index_in_batch]
 
                     # Calculate top-left corner of the "grid cell"
+                    # The spacing of cells is now based on the calculated actual_drawn_slot_width/height
                     grid_cell_x_start = margin + j * (actual_drawn_slot_width + padding)
-                    grid_cell_y_start = margin + i * (actual_drawn_slot_height + padding)
+                    grid_cell_y_start = margin + i * (actual_drawn_slot_height_base + padding)
 
-                    # Ensure we stay within A4 bounds, especially for the last item/row/column
-                    if grid_cell_x_start + actual_drawn_slot_width > a4_width_px - margin:
-                        grid_cell_x_start = a4_width_px - margin - actual_drawn_slot_width
-                    if grid_cell_y_start + actual_drawn_slot_height > a4_height_px - margin:
-                        grid_cell_y_start = a4_height_px - margin - actual_drawn_slot_height
+                    # Ensure we stay within A4 bounds (edge case for last item)
+                    grid_cell_x_start = min(grid_cell_x_start, a4_width_px - margin - actual_drawn_slot_width)
+                    grid_cell_y_start = min(grid_cell_y_start, a4_height_px - margin - actual_drawn_slot_height_base)
+                    # Ensure minimums
+                    grid_cell_x_start = max(margin, grid_cell_x_start)
+                    grid_cell_y_start = max(margin, grid_cell_y_start)
 
 
                     # Draw border around the actual rectangular content area
-                    border_coords = (
-                        grid_cell_x_start,
-                        grid_cell_y_start,
-                        grid_cell_x_start + actual_drawn_slot_width,
-                        grid_cell_y_start + actual_drawn_slot_height
-                    )
-                    draw.rectangle(border_coords, outline=border_color, width=border_width)
-
+                    # The height of the box will depend on the wrapped text, so we'll draw it dynamically
+                    
                     # Calculate image position (centered horizontally within its drawn slot)
                     img_x = grid_cell_x_start + (actual_drawn_slot_width - current_img.width) // 2
                     img_y = grid_cell_y_start + border_width # Small offset from top border of drawn slot
 
                     a4_canvas.paste(current_img, (img_x, img_y))
                     
-                    # Calculate text position (centered horizontally, directly below the image)
-                    bbox = draw.textbbox((0,0), filename, font=font)
-                    text_width = bbox[2] - bbox[0]
+                    # --- Text Wrapping and Drawing ---
+                    # max_text_width is the width available for the text inside the drawn slot
+                    max_text_width = actual_drawn_slot_width - (2 * border_width) - 10 # 10px inner padding
+                    wrapped_lines = wrap_text(filename, font, max_text_width)
+                    
+                    current_text_y = img_y + current_img.height + 5 # Start below the image
+                    
+                    for line in wrapped_lines:
+                        bbox = draw.textbbox((0,0), line, font=font)
+                        text_width = bbox[2] - bbox[0]
+                        text_height_per_line = bbox[3] - bbox[1]
 
-                    text_x = grid_cell_x_start + (actual_drawn_slot_width - text_width) // 2
-                    text_y = img_y + current_img.height + 5 
+                        text_x = grid_cell_x_start + (actual_drawn_slot_width - text_width) // 2
+                        
+                        draw.text((text_x, current_text_y), line, fill=text_color, font=font)
+                        current_text_y += text_height_per_line + 5 # Move to next line for wrapped text
 
-                    draw.text((text_x, text_y), filename, fill=text_color, font=font)
-        
+                    # Now, let's determine the actual height of the drawn box, considering the wrapped text
+                    final_box_height = (current_text_y - (grid_cell_y_start + border_width)) + border_width + 5 # 5 for bottom padding
+                    
+                    # Redraw border to adjust to final content height if needed (optional but good for visual)
+                    # If we re-draw, it will be on top, so better draw once with max possible height
+                    # or manage the height dynamically
+                    
+                    # For simplicity of drawing, the border is drawn with actual_drawn_slot_width and a dynamic height.
+                    # This means if text wraps a lot, the box will extend.
+                    
+                    # Draw border dynamically based on content height
+                    draw.rectangle(
+                        (grid_cell_x_start, grid_cell_y_start, 
+                         grid_cell_x_start + actual_drawn_slot_width, 
+                         current_text_y + border_width), # Use current_text_y for bottom of box
+                        outline=border_color, width=border_width
+                    )
+
         all_pdf_pages.append(a4_canvas) # Add the completed A4 page to the list
 
     # Save all generated A4 pages as a single multi-page PDF
@@ -181,7 +238,7 @@ st.set_page_config(layout="centered", page_title="Jejer Bukti Transfer ke A4")
 st.title("Jejer Gambar Bukti Transfer ke Lembar A4 (Portrait, 3 Kolom x 2 Baris)")
 st.write("""
 Unggah gambar bukti transfer Kamu. Setiap 6 gambar akan ditempatkan dalam satu halaman A4 dengan tata letak grid **3 kolom x 2 baris** (total 6 gambar) dalam orientasi **portrait**.
-**Setiap gambar akan berada dalam kotak persegi panjang (lebih tinggi dari lebar)**. Gambar landscape akan otomatis diputar agar pas, gambar akan di-auto-scale, dan **nama file (tanpa ekstensi) akan ditampilkan di bawah setiap gambar**.
+**Setiap gambar akan berada dalam kotak persegi panjang (lebih tinggi dari lebar)**. Gambar landscape akan otomatis diputar agar pas, gambar akan di-auto-scale, dan **nama file (tanpa ekstensi) akan ditampilkan di bawah setiap gambar dan akan otomatis dibungkus ke baris baru jika terlalu panjang**.
 Setelah diproses, Kamu bisa mengunduh hasilnya dalam format PDF multi-halaman.
 """)
 
@@ -210,7 +267,7 @@ if uploaded_files:
                 st.download_button(
                     label="Unduh PDF A4 (Multi-Halaman)",
                     data=pdf_data,
-                    file_name="bukti_transfer_a4_grid_portrait_3col_2row.pdf",
+                    file_name="bukti_transfer_a4_grid_portrait_3col_2row_wrapped.pdf",
                     mime="application/pdf"
                 )
                 st.info("Untuk mencetak, unduh PDF lalu buka filenya. Setelah itu cetak seperti biasa.")
