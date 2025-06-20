@@ -235,7 +235,7 @@ def create_a4_grid_pdf(uploaded_files_data):
 # --- Streamlit UI ---
 st.set_page_config(layout="centered", page_title="Jejer Bukti Transfer ke A4")
 
-st.title("Jejer Gambar Bukti Transfer ke Lembar A4 (Portrait, 3 Kolom x 2 Baris)")
+st.title("Jejer Gambar ke Lembar A4 (Portrait, 3 Kolom x 2 Baris)")
 st.write("""
 Unggah gambar bukti transfer Kamu. Setiap 6 gambar akan ditempatkan dalam satu halaman A4 dengan tata letak grid **3 kolom x 2 baris** (total 6 gambar) dalam orientasi **portrait**.
 **Setiap gambar akan berada dalam kotak persegi panjang (lebih tinggi dari lebar)**. Gambar landscape akan otomatis diputar agar pas, gambar akan di-auto-scale, dan **nama file (tanpa ekstensi) akan ditampilkan di bawah setiap gambar dan akan otomatis dibungkus ke baris baru jika terlalu panjang**.
