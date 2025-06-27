@@ -6,7 +6,7 @@ import re
 import math
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
-from openpyxl.styles import Protection # Masih diimpor tapi tidak akan digunakan untuk mengunci sel
+from openpyxl.styles import Protection
 
 # --- Inisialisasi variabel di awal skrip untuk menghindari NameError ---
 df_processed = None
@@ -51,21 +51,41 @@ def process_attendance_log(uploaded_file):
     tahun_laporan = None
     bulan_laporan = None
     periode_row_index = -1
+    start_date_periode = None # New variable
+    end_date_periode = None   # New variable
 
     for r_idx, row_series in df_raw.iterrows():
         row_str = ' '.join(row_series.dropna().astype(str).tolist())
         
-        match = re.search(r'Periode\s*:\s*(\d{4})/(\d{2})/\d{2}\s*~\s*\d{2}/\d{2}', row_str)
+        # Modified regex to capture both start and end dates
+        match = re.search(r'Periode\s*:\s*(\d{4})/(\d{2})/(\d{2})\s*~\s*(\d{2})/(\d{2})', row_str)
         if match:
             tahun_laporan = int(match.group(1))
             bulan_laporan = int(match.group(2))
-            periode_row_index = r_idx
-            st.info(f"Periode laporan teridentifikasi: Tahun={tahun_laporan}, Bulan={bulan_laporan} dari baris {r_idx + 1}")
-            break
+            day_start = int(match.group(3))
+            month_end = int(match.group(4))
+            day_end = int(match.group(5))
 
-    if tahun_laporan is None or bulan_laporan is None:
-        st.error("Error: Informasi periode (tahun/bulan) tidak ditemukan di file Excel.")
-        st.warning("Pastikan ada baris yang mengandung 'Periode :YYYY/MM/DD ~ MM/DD'.")
+            try:
+                start_date_periode = date(tahun_laporan, bulan_laporan, day_start)
+                # Assume end month is same year as start month, unless month_end implies next year (e.g. Dec -> Jan)
+                # For simplicity, if month_end < bulan_laporan, assume it's next year (this might need adjustment for cross-year reports)
+                if month_end < bulan_laporan:
+                    end_date_periode = date(tahun_laporan + 1, month_end, day_end)
+                else:
+                    end_date_periode = date(tahun_laporan, month_end, day_end)
+
+                st.info(f"Periode laporan teridentifikasi: {start_date_periode.strftime('%Y/%m/%d')} ~ {end_date_periode.strftime('%Y/%m/%d')} dari baris {r_idx + 1}")
+                periode_row_index = r_idx
+                break
+            except ValueError as ve:
+                st.error(f"Error parsing date from 'Periode' string: {ve}")
+                st.warning("Pastikan format tanggal di baris 'Periode' adalah YYYY/MM/DD ~ MM/DD.")
+                return None, None, None
+
+    if start_date_periode is None or end_date_periode is None:
+        st.error("Error: Informasi periode (tanggal mulai/akhir) tidak ditemukan atau tidak valid di file Excel.")
+        st.warning("Pastikan ada baris yang mengandung 'Periode :YYYY/MM/DD ~ MM/DD' dengan format tanggal yang benar.")
         return None, None, None
 
     days_row_idx_global = periode_row_index + 1
@@ -106,6 +126,8 @@ def process_attendance_log(uploaded_file):
 
     st.info(f"Ditemukan {len(employee_blocks_indices)} blok karyawan.")
 
+    # Collect all employee names and their first row index
+    employee_names_and_indices = []
     for i, start_row_idx in enumerate(employee_blocks_indices):
         nama_karyawan = None
         name_label_col_idx = -1
@@ -125,21 +147,62 @@ def process_attendance_log(uploaded_file):
         if nama_karyawan is None or nama_karyawan == 'nan' or nama_karyawan == '':
             st.warning(f"Peringatan: Nama karyawan tidak ditemukan atau kosong untuk blok dimulai dari baris {start_row_idx + 1}. Melewati blok ini.")
             continue
+        employee_names_and_indices.append((nama_karyawan, start_row_idx))
 
+    # --- GENERATE DATES BASED ON PERIODE INSTEAD OF WHOLE MONTH ---
+    all_dates_in_month = []
+    current_date_iter = start_date_periode
+    while current_date_iter <= end_date_periode:
+        all_dates_in_month.append(current_date_iter)
+        current_date_iter += timedelta(days=1)
+    
+    st.info(f"Rentang tanggal yang akan diproses: {start_date_periode.strftime('%Y-%m-%d')} sampai {end_date_periode.strftime('%Y-%m-%d')}")
+
+    # --- Initialize log_karyawan_harian with all employees and all dates in the extracted period ---
+    log_karyawan_harian = {}
+    for nama_karyawan, _ in employee_names_and_indices:
+        for current_date_in_period in all_dates_in_month:
+            key = (nama_karyawan, current_date_in_period)
+            log_karyawan_harian[key] = {
+                'No': 0, 
+                'Nama': nama_karyawan,
+                'Tanggal': current_date_in_period,
+                'Log Jam Mentah': '', # New column to store raw times as string
+                'Jam Datang': None,
+                'Jam Pulang': None,
+                'Jam Istirahat Mulai': None,
+                'Jam Istirahat Selesai': None,
+                'Durasi Jam Kerja': None,
+                'Durasi Kerja Pembulatan': None,
+                'Durasi Istirahat': None,
+                'Keterangan Tambahan 1': '', 
+                'Keterangan Tambahan 2': '', 
+                'log_all_times': [] # For internal processing (time objects)
+            }
+
+
+    # Populate raw_logs list with parsed times and raw string for the new column
+    for i, (nama_karyawan, start_row_idx) in enumerate(employee_names_and_indices):
         logs_start_row_for_this_block = start_row_idx + 1 
-        sorted_day_nums = sorted(col_day_mapping_global.keys())
+        # Only process days that are within the specified period
+        sorted_day_nums = sorted([d for d in col_day_mapping_global.keys() if date(tahun_laporan, bulan_laporan, d) >= start_date_periode and date(tahun_laporan, bulan_laporan, d) <= end_date_periode])
 
         for day_num in sorted_day_nums:
             col_idx = col_day_mapping_global[day_num]
             try:
+                # Use the year/month from the Periode line, and the day from the column header
                 current_date = date(tahun_laporan, bulan_laporan, day_num)
             except ValueError as ve:
                 st.warning(f"Peringatan: Tanggal tidak valid ({tahun_laporan}/{bulan_laporan}/{day_num}) untuk '{nama_karyawan}'. Error: {ve}. Melewati hari ini.")
                 continue
+            
+            key = (nama_karyawan, current_date)
+            
+            raw_cell_times_strings = [] 
 
             for r_idx_log in range(logs_start_row_for_this_block, df_raw.shape[0]):
                 if r_idx_log in employee_blocks_indices and r_idx_log != start_row_idx:
-                    break
+                    break # Reached the next employee block
                 
                 if col_idx >= df_raw.shape[1]:
                     continue
@@ -153,15 +216,17 @@ def process_attendance_log(uploaded_file):
 
                         if (pd.isna(next_cell_val_1) or next_cell_val_1 == '' or next_cell_val_1 == 'nan') and \
                            (pd.isna(next_cell_val_2) or next_cell_val_2 == '' or next_cell_val_2 == 'nan'):
-                            break
+                            break 
                     else:
-                        break
-                    continue
-
-                potential_times = re.split(r'\s+|\n', log_cell_value)
+                        break 
+                    
+                    continue 
                 
-                for time_str in potential_times:
-                    time_str = time_str.strip()
+                potential_times_in_cell = re.split(r'\s+|\n', log_cell_value)
+                parsed_times_from_this_cell = [] 
+
+                for time_str_raw in potential_times_in_cell:
+                    time_str = time_str_raw.strip()
                     if not time_str:
                         continue
 
@@ -183,97 +248,126 @@ def process_attendance_log(uploaded_file):
                                     dt_obj = pd.to_datetime(time_str)
                                     parsed_time = dt_obj.time()
                             except Exception:
-                                pass
+                                pass 
                     
                     if parsed_time:
-                        raw_logs.append({
-                            'Nama': nama_karyawan,
-                            'Tanggal': current_date,
-                            'Jam': parsed_time
-                        })
+                        # Only add to log_all_times if the date is within the specified period
+                        if start_date_periode <= current_date <= end_date_periode:
+                            log_karyawan_harian[key]['log_all_times'].append(parsed_time)
+                            parsed_times_from_this_cell.append(parsed_time.strftime('%H:%M:%S')) 
 
-    if not raw_logs:
-        st.error("Tidak ada log absensi yang berhasil diekstrak dari file.")
-        st.warning("Pastikan format data konsisten dan tidak ada masalah parsing.")
+                if parsed_times_from_this_cell:
+                    raw_cell_times_strings.extend(parsed_times_from_this_cell)
+            
+            # --- IMPORTANT: Ensure 'Log Jam Mentah' is only updated if the date is within the period ---
+            if start_date_periode <= current_date <= end_date_periode and raw_cell_times_strings:
+                # The sorted() here ensures consistent order, which is generally good practice
+                # If you want the EXACT order as in the original cell, remove sorted()
+                log_karyawan_harian[key]['Log Jam Mentah'] = '\n'.join(sorted(raw_cell_times_strings))
+            # Else, it remains empty as initialized for dates outside the actual scanned range
+            
+
+    # If no logs were extracted at all, return None
+    # This check is now better placed after attempting to parse all logs
+    if all(not data['log_all_times'] and not data['Log Jam Mentah'] for data in log_karyawan_harian.values()):
+        st.warning("Tidak ada log absensi yang berhasil diekstrak dari file untuk karyawan manapun.")
+        # We might still want to return an empty DataFrame with correct dates if no logs
+        # but for now, if truly no logs, we return None as before.
         return None, None, None
 
-    df_log_mentah = pd.DataFrame(raw_logs)
-    df_log_mentah.sort_values(by=['Nama', 'Tanggal', 'Jam'], inplace=True)
-    st.success(f"Berhasil mengekstrak {len(df_log_mentah)} log absensi mentah.")
-    st.subheader("DEBUG INFO: 5 Baris Pertama dari Log Mentah yang Diekstrak")
-    st.dataframe(df_log_mentah.head())
+    st.success(f"Berhasil mengekstrak log absensi mentah dan menginisialisasi semua tanggal.")
+    
+    # Debug raw_logs for some entries
+    # Sample only from keys that actually have logs to avoid showing empty entries here
+    sample_raw_logs_df = pd.DataFrame([
+        {'Nama': data['Nama'], 'Tanggal': data['Tanggal'], 'Jam': t} 
+        for key, data in log_karyawan_harian.items() 
+        if data['log_all_times'] # Only include entries that actually had times
+        for t in data['log_all_times']
+    ])
+    sample_raw_logs_df.sort_values(by=['Nama', 'Tanggal', 'Jam'], inplace=True)
+    st.subheader("DEBUG INFO: 5 Baris Pertama dari Log Mentah yang Diekstrak (untuk pemrosesan)")
+    st.dataframe(sample_raw_logs_df.head())
+
 
     st.info("Mengolah log mentah ke format output yang diinginkan (dengan aturan shift)...")
 
-    kolom_final = ['No', 'Nama', 'Tanggal', 'Jam Datang', 'Jam Pulang', 
+    # Update kolom_final to include the new 'Log Jam Mentah' column
+    kolom_final = ['No', 'Nama', 'Tanggal', 'Log Jam Mentah', 'Jam Datang', 'Jam Pulang', 
                    'Jam Istirahat Mulai', 'Jam Istirahat Selesai', 
                    'Durasi Jam Kerja', 'Durasi Kerja Pembulatan', 'Durasi Istirahat',
                    'Keterangan Tambahan 1', 'Keterangan Tambahan 2'] 
     
-    log_karyawan_harian = {}
-
-    for index, row in df_log_mentah.iterrows():
-        nama = row['Nama']
-        tanggal = row['Tanggal']
-        jam_obj = row['Jam']
-
-        key = (nama, tanggal)
-
-        if key not in log_karyawan_harian:
-            log_karyawan_harian[key] = {
-                'No': 0, 
-                'Nama': nama,
-                'Tanggal': tanggal,
-                'Jam Datang': None,
-                'Jam Pulang': None,
-                'Jam Istirahat Mulai': None,
-                'Jam Istirahat Selesai': None,
-                'Durasi Jam Kerja': None,
-                'Durasi Kerja Pembulatan': None,
-                'Durasi Istirahat': None,
-                'Keterangan Tambahan 1': '', 
-                'Keterangan Tambahan 2': '', 
-                'log_all_times': []
-            }
-        log_karyawan_harian[key]['log_all_times'].append(jam_obj)
-
-
+    # Process the aggregated daily logs
     for key, data in log_karyawan_harian.items():
         all_times = sorted(data['log_all_times'])
 
+        # Skip if no logs for this day/employee (keep row with empty times)
         if not all_times:
             continue
 
+        # --- Tentukan Jam Datang ---
         data['Jam Datang'] = None
-        data['Jam Pulang'] = None
-        data['Jam Istirahat Mulai'] = None
-        data['Jam Istirahat Selesai'] = None
-
         for t_log in all_times:
-            if time(6, 0, 0) <= t_log <= time(9, 0, 0):
+            if time(6, 0, 0) <= t_log <= time(9, 0, 0): # Pagi
                 if data['Jam Datang'] is None or t_log < data['Jam Datang']:
                     data['Jam Datang'] = t_log
-            elif time(14, 30, 0) <= t_log <= time(15, 0, 0):
-                if data['Jam Datang'] is None or t_log < data['Jam Datang']:
+            elif time(14, 30, 0) <= t_log <= time(15, 0, 0): # Siang (untuk shift siang mungkin)
+                # Hanya jika belum ada jam datang yang lebih pagi
+                if data['Jam Datang'] is None or t_log < data['Jam Datang']: 
                     data['Jam Datang'] = t_log
-
+        
+        # Fallback for Jam Datang if not found in specific windows
         if data['Jam Datang'] is None and all_times:
-             data['Jam Datang'] = all_times[0]
+            data['Jam Datang'] = all_times[0]
 
-        for t_log in reversed(all_times):
-            if time(23, 0, 0) <= t_log <= time(23, 59, 59):
-                if data['Jam Pulang'] is None or t_log > data['Jam Pulang']:
-                    data['Jam Pulang'] = t_log
-                break
-            elif time(16, 0, 0) <= t_log <= time(18, 0, 0):
-                if data['Jam Pulang'] is None or t_log > data['Jam Pulang']:
-                    data['Jam Pulang'] = t_log
 
+        # --- Tentukan Jam Pulang ---
+        data['Jam Pulang'] = None
+        # Check if it's Saturday (5) or Sunday (6)
+        is_weekend = data['Tanggal'].weekday() in [5, 6] 
+
+        if is_weekend:
+            # Prioritize 19:00 - 20:00 for weekends
+            for t_log in reversed(all_times): # Iterate in reverse to find the latest
+                if time(19, 0, 0) <= t_log <= time(20, 0, 0):
+                    data['Jam Pulang'] = t_log
+                    break # Found the desired weekend pulang, stop searching
+            
+            # If not found in 19:00-20:00, check other general evening/late night hours
+            if data['Jam Pulang'] is None:
+                for t_log in reversed(all_times):
+                    if time(23, 0, 0) <= t_log <= time(23, 59, 59):
+                        data['Jam Pulang'] = t_log
+                        break
+                    elif time(16, 0, 0) <= t_log <= time(18, 0, 0):
+                        if data['Jam Pulang'] is None or t_log > data['Jam Pulang']: # Ensure we get the latest within range
+                            data['Jam Pulang'] = t_log
+        else: # Weekdays
+            for t_log in reversed(all_times):
+                if time(23, 0, 0) <= t_log <= time(23, 59, 59):
+                    data['Jam Pulang'] = t_log
+                    break
+                elif time(16, 0, 0) <= t_log <= time(18, 0, 0):
+                    if data['Jam Pulang'] is None or t_log > data['Jam Pulang']:
+                        data['Jam Pulang'] = t_log
+
+        # Fallback for Jam Pulang if not found in specific windows
         if data['Jam Pulang'] is None and all_times:
             data['Jam Pulang'] = all_times[-1]
 
+
+        # --- Tentukan Jam Istirahat ---
         potential_break_times = []
-        for t_log in all_times:
+        if data['Jam Datang'] and data['Jam Pulang']:
+            # Consider only logs between Jam Datang and Jam Pulang for breaks
+            # This helps to exclude Jam Datang/Pulang if they fall into break windows
+            internal_logs = [t_log for t_log in all_times 
+                             if data['Jam Datang'] < t_log < data['Jam Pulang']]
+        else:
+            internal_logs = all_times # If no definite start/end, consider all logs
+
+        for t_log in internal_logs:
             if time(11, 0, 0) <= t_log <= time(14, 0, 0):
                 potential_break_times.append(t_log)
             elif time(19, 0, 0) <= t_log <= time(22, 0, 0):
@@ -284,9 +378,14 @@ def process_attendance_log(uploaded_file):
             data['Jam Istirahat Mulai'] = sorted_breaks[0]
             data['Jam Istirahat Selesai'] = sorted_breaks[-1]
         elif len(potential_break_times) == 1:
+            # If only one break log, it's both start and end (break duration will be 0)
             data['Jam Istirahat Mulai'] = potential_break_times[0]
             data['Jam Istirahat Selesai'] = potential_break_times[0]
+        else:
+            data['Jam Istirahat Mulai'] = None
+            data['Jam Istirahat Selesai'] = None
 
+        # --- Hitung Durasi Jam Kerja ---
         if data['Jam Datang'] and data['Jam Pulang']:
             dt_datang = datetime.combine(data['Tanggal'], data['Jam Datang'])
             dt_pulang = datetime.combine(data['Tanggal'], data['Jam Pulang'])
@@ -317,6 +416,7 @@ def process_attendance_log(uploaded_file):
             data['Durasi Jam Kerja'] = ''
             data['Durasi Kerja Pembulatan'] = ''
 
+        # --- Hitung Durasi Istirahat ---
         if data['Jam Istirahat Mulai'] and data['Jam Istirahat Selesai']:
             dt_istirahat_mulai = datetime.combine(data['Tanggal'], data['Jam Istirahat Mulai'])
             dt_istirahat_selesai = datetime.combine(data['Tanggal'], data['Jam Istirahat Selesai'])
@@ -326,8 +426,12 @@ def process_attendance_log(uploaded_file):
         else:
             data['Durasi Istirahat'] = ''
 
+    # Convert dictionary to list of dictionaries for DataFrame creation
     df_hasil_list = []
-    for key, data in log_karyawan_harian.items():
+    # Sort keys to ensure consistent order (by employee name, then date)
+    sorted_keys = sorted(log_karyawan_harian.keys())
+    for key in sorted_keys:
+        data = log_karyawan_harian[key]
         row_data = {col: data.get(col) for col in kolom_final}
         df_hasil_list.append(row_data)
 
@@ -340,7 +444,7 @@ def process_attendance_log(uploaded_file):
     st.dataframe(df_hasil)
     st.info(f"Total baris: {len(df_hasil)}")
     
-    return df_hasil, bulan_laporan, tahun_laporan
+    return df_hasil, bulan_laporan, tahun_laporan # Still return bulan_laporan, tahun_laporan for file name consistency
 
 uploaded_file = st.file_uploader("Pilih file Excel (.xlsx atau .xls)", type=["xlsx", "xls"])
 
@@ -354,18 +458,22 @@ if uploaded_file is not None:
         st.subheader("Download Hasil Pengolahan")
         
         df_processed_for_excel = df_processed.copy()
-        if 'Keterangan Tambahan 1' not in df_processed_for_excel.columns:
-            df_processed_for_excel['Keterangan Tambahan 1'] = ''
-        if 'Keterangan Tambahan 2' not in df_processed_for_excel.columns:
-            df_processed_for_excel['Keterangan Tambahan 2'] = ''
+        
+        # Ensure all columns exist before processing
+        required_cols = ['Keterangan Tambahan 1', 'Keterangan Tambahan 2']
+        for col in required_cols:
+            if col not in df_processed_for_excel.columns:
+                df_processed_for_excel[col] = ''
 
+        # Format time columns for Excel output
         for col in ['Jam Datang', 'Jam Pulang', 'Jam Istirahat Mulai', 'Jam Istirahat Selesai']:
             df_processed_for_excel[col] = df_processed_for_excel[col].apply(lambda x: x.strftime('%H:%M:%S') if isinstance(x, time) else '')
 
         output_buffer = io.BytesIO()
         
         if bulan_laporan_val is not None and tahun_laporan_val is not None:
-            output_file_name = f'Rekap_Absensi_Bulan_{bulan_laporan_val:02d}_{tahun_laporan_val}.xlsx'
+            # Use a more generic name as the period is now specific
+            output_file_name = f'Rekap_Absensi_Periode_{bulan_laporan_val:02d}_{tahun_laporan_val}.xlsx'
         else:
             output_file_name = 'Rekap_Absensi_Tanpa_Periode.xlsx'
 
@@ -373,20 +481,14 @@ if uploaded_file is not None:
         ws = wb.active
         ws.title = 'Rekap Absensi'
 
-        # --- PERUBAHAN DI SINI: columns_to_lock menjadi kosong atau dihapus ---
-        # Karena kita ingin mematikan proteksi sheet, daftar ini tidak lagi relevan
-        # atau bisa dibiarkan kosong
-        columns_to_lock = [] # Daftar kolom yang dikunci sekarang kosong
+        columns_to_lock = [] 
         
         header_names = list(df_processed_for_excel.columns)
         
-        # --- Bagian Kritis: Menentukan Rentang Maksimum Worksheet ---
         max_populated_row = df_processed_for_excel.shape[0] + 1 
         max_rows_for_protection = max(max_populated_row + 50, 1000) 
         num_cols = len(header_names)
 
-        # --- Iterasi untuk mengatur properti proteksi SETIAP sel yang mungkin digunakan ---
-        # Karena columns_to_lock kosong, semua sel akan diatur locked=False
         for r_idx_excel in range(1, max_rows_for_protection + 1):
             for c_idx in range(num_cols):
                 column_name = header_names[c_idx]
@@ -395,27 +497,26 @@ if uploaded_file is not None:
                 if r_idx_excel == 1:
                     cell.value = column_name
                 
-                # --- PERUBAHAN DI SINI: Selalu set locked=False ---
-                # Karena columns_to_lock sekarang kosong, kondisi ini akan selalu True
-                # jika Anda tetap ingin menggunakan struktur if, atau bisa disederhanakan
                 cell.protection = Protection(locked=False) 
+                
+                # Tambahkan fitur wrap text untuk kolom 'Log Jam Mentah'
+                if column_name == 'Log Jam Mentah':
+                    cell.alignment = cell.alignment.copy(wrapText=True)
         
-        # --- Isi data dari DataFrame ke sel yang sudah diatur proteksinya ---
         for r_idx, row_data in enumerate(dataframe_to_rows(df_processed_for_excel, index=False, header=False)):
             row_num_excel = r_idx + 2 
             for c_idx, cell_value in enumerate(row_data):
                 cell = ws.cell(row=row_num_excel, column=c_idx + 1)
                 cell.value = cell_value 
+                # Pastikan wrap text tetap aktif untuk sel data di kolom 'Log Jam Mentah'
+                if header_names[c_idx] == 'Log Jam Mentah':
+                    cell.alignment = cell.alignment.copy(wrapText=True)
 
-        # --- Mengatur Lebar Kolom ---
+
         DEFAULT_COLUMN_WIDTH = 25
         for i, col_name in enumerate(header_names):
             column_letter = chr(ord('A') + i)
             ws.column_dimensions[column_letter].width = DEFAULT_COLUMN_WIDTH
-
-        # --- PERUBAHAN DI SINI: Baris ini DIHAPUS atau DIKOMEN ---
-        # ws.protection.sheet = True 
-        # ws.protection.password = 'YourStrongPassword'
 
         wb.save(output_buffer)
         output_buffer.seek(0)
