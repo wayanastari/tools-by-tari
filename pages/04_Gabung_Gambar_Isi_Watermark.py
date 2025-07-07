@@ -41,7 +41,7 @@ def process_single_image(background_img, product_img_file, watermark_img, target
 
         draw = ImageDraw.Draw(combined_image)
         try:
-            font_size = int(bg_height * 0.09) 
+            font_size = int(bg_height * 0.08) 
             # Coba load font Poppins Bold dari file yang di-upload
             font = ImageFont.truetype(FONT_FILE_NAME, font_size)
             # st.info(f"Menggunakan font: {FONT_FILE_NAME}") # Komentar ini karena akan sering muncul
