@@ -64,7 +64,7 @@ def process_single_image(background_img, product_img_file, watermark_img, target
         text_height = text_bbox[3] - text_bbox[1]
 
         text_x = (bg_width - text_width) // 2
-        text_y = product_y + product_height_target + int(bg_height * 0.1) 
+        text_y = product_y + product_height_target + int(bg_height * 0.008) 
 
         draw.text((text_x, text_y), product_name_caps, font=font, fill=text_color)
 
