@@ -4,7 +4,6 @@ import os
 import io
 import zipfile # Import library zipfile
 
-# --- PENTING: PASTIKAN NAMA FILE FONT INI SESUAI DENGAN YANG ANDA UNDUH DAN ADA DI REPO GITHUB ---
 FONT_FILE_NAME = "Poppins-Bold.ttf" 
 # Fallback font jika font kustom tidak ditemukan (misalnya "arial.ttf" atau "DejaVuSans-Bold.ttf")
 FALLBACK_FONT_NAME = "arial.ttf" 
@@ -25,7 +24,7 @@ def process_single_image(background_img, product_img_file, watermark_img, target
 
         # Atur ukuran produk agar sesuai (misal, 60% dari lebar background)
         bg_width, bg_height = combined_image.size
-        product_width_target = int(bg_width * 0.6)
+        product_width_target = int(bg_width * 0.7)
         product_height_target = int(product_image.size[1] * (product_width_target / product_image.size[0]))
         product_image = product_image.resize((product_width_target, product_height_target), Image.Resampling.LANCZOS)
 
@@ -42,12 +41,11 @@ def process_single_image(background_img, product_img_file, watermark_img, target
 
         draw = ImageDraw.Draw(combined_image)
         try:
-            font_size = int(bg_height * 0.05) 
+            font_size = int(bg_height * 0.09) 
             # Coba load font Poppins Bold dari file yang di-upload
             font = ImageFont.truetype(FONT_FILE_NAME, font_size)
             # st.info(f"Menggunakan font: {FONT_FILE_NAME}") # Komentar ini karena akan sering muncul
         except IOError:
-            # Jika font kustom tidak ditemukan, coba font fallback sistem
             # st.warning(f"Font '{FONT_FILE_NAME}' tidak ditemukan. Mencoba font fallback '{FALLBACK_FONT_NAME}'. Pastikan '{FONT_FILE_NAME}' ada di repositori Anda.") # Komentar ini
             try:
                 font = ImageFont.truetype(FALLBACK_FONT_NAME, font_size)
@@ -182,7 +180,7 @@ if st.button("Mulai Penggabungan dan Optimasi"):
                     )
 
                     if processed_pil_image and processed_bytes:
-                        # Tampilkan gambar individual (opsional, bisa dihapus jika hanya ingin unduh ZIP)
+                       
                         st.image(processed_pil_image, caption=f"Hasil untuk {output_filename}", use_column_width=True)
                         
                         # Tambahkan gambar ke dalam ZIP
