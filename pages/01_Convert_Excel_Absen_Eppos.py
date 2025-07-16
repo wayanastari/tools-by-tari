@@ -51,36 +51,48 @@ def process_attendance_log(uploaded_file):
     tahun_laporan = None
     bulan_laporan = None
     periode_row_index = -1
-    start_date_periode = None # New variable
-    end_date_periode = None   # New variable
+    start_date_periode = None
+    end_date_periode = None
 
     for r_idx, row_series in df_raw.iterrows():
         row_str = ' '.join(row_series.dropna().astype(str).tolist())
         
-        # Modified regex to capture both start and end dates
-        match = re.search(r'Periode\s*:\s*(\d{4})/(\d{2})/(\d{2})\s*~\s*(\d{2})/(\d{2})', row_str)
+        # Regex updated to capture the year for the end date as well, if available.
+        # This makes the date parsing more robust for cross-year periods.
+        # It tries to match YYYY/MM/DD ~ YYYY/MM/DD first, then falls back to YYYY/MM/DD ~ MM/DD
+        match = re.search(r'Periode\s*:\s*(\d{4})/(\d{2})/(\d{2})\s*~\s*(?:(\d{4})/)?(\d{2})/(\d{2})', row_str)
         if match:
-            tahun_laporan = int(match.group(1))
-            bulan_laporan = int(match.group(2))
-            day_start = int(match.group(3))
-            month_end = int(match.group(4))
-            day_end = int(match.group(5))
+            start_year = int(match.group(1))
+            start_month = int(match.group(2))
+            start_day = int(match.group(3))
+            
+            end_year_str = match.group(4)
+            end_month = int(match.group(5))
+            end_day = int(match.group(6))
 
             try:
-                start_date_periode = date(tahun_laporan, bulan_laporan, day_start)
-                # Assume end month is same year as start month, unless month_end implies next year (e.g. Dec -> Jan)
-                # For simplicity, if month_end < bulan_laporan, assume it's next year (this might need adjustment for cross-year reports)
-                if month_end < bulan_laporan:
-                    end_date_periode = date(tahun_laporan + 1, month_end, day_end)
-                else:
-                    end_date_periode = date(tahun_laporan, month_end, day_end)
+                start_date_periode = date(start_year, start_month, start_day)
+                
+                if end_year_str: # If end year is explicitly provided in the regex
+                    end_year = int(end_year_str)
+                else: # Infer end year if not explicitly provided (e.g., YYYY/MM/DD ~ MM/DD)
+                    if end_month < start_month:
+                        end_year = start_year + 1
+                    else:
+                        end_year = start_year
+                
+                end_date_periode = date(end_year, end_month, end_day)
+
+                # Set bulan_laporan and tahun_laporan to the start of the period for file naming consistency
+                bulan_laporan = start_month
+                tahun_laporan = start_year
 
                 st.info(f"Periode laporan teridentifikasi: {start_date_periode.strftime('%Y/%m/%d')} ~ {end_date_periode.strftime('%Y/%m/%d')} dari baris {r_idx + 1}")
                 periode_row_index = r_idx
                 break
             except ValueError as ve:
                 st.error(f"Error parsing date from 'Periode' string: {ve}")
-                st.warning("Pastikan format tanggal di baris 'Periode' adalah YYYY/MM/DD ~ MM/DD.")
+                st.warning("Pastikan format tanggal di baris 'Periode' adalah YYYY/MM/DD ~ [YYYY/][MM]/DD.")
                 return None, None, None
 
     if start_date_periode is None or end_date_periode is None:
@@ -110,7 +122,6 @@ def process_attendance_log(uploaded_file):
 
     st.info(f"Ditemukan {len(col_day_mapping_global)} nomor hari.")
 
-    raw_logs = []
     employee_blocks_indices = []
     for r_idx in range(df_raw.shape[0]):
         cell_val_col_0 = str(df_raw.iloc[r_idx, 0]).strip() if df_raw.shape[1] > 0 else ''
@@ -126,7 +137,6 @@ def process_attendance_log(uploaded_file):
 
     st.info(f"Ditemukan {len(employee_blocks_indices)} blok karyawan.")
 
-    # Collect all employee names and their first row index
     employee_names_and_indices = []
     for i, start_row_idx in enumerate(employee_blocks_indices):
         nama_karyawan = None
@@ -149,25 +159,23 @@ def process_attendance_log(uploaded_file):
             continue
         employee_names_and_indices.append((nama_karyawan, start_row_idx))
 
-    # --- GENERATE DATES BASED ON PERIODE INSTEAD OF WHOLE MONTH ---
-    all_dates_in_month = []
+    all_dates_in_period = []
     current_date_iter = start_date_periode
     while current_date_iter <= end_date_periode:
-        all_dates_in_month.append(current_date_iter)
+        all_dates_in_period.append(current_date_iter)
         current_date_iter += timedelta(days=1)
     
     st.info(f"Rentang tanggal yang akan diproses: {start_date_periode.strftime('%Y-%m-%d')} sampai {end_date_periode.strftime('%Y-%m-%d')}")
 
-    # --- Initialize log_karyawan_harian with all employees and all dates in the extracted period ---
     log_karyawan_harian = {}
     for nama_karyawan, _ in employee_names_and_indices:
-        for current_date_in_period in all_dates_in_month:
+        for current_date_in_period in all_dates_in_period:
             key = (nama_karyawan, current_date_in_period)
             log_karyawan_harian[key] = {
                 'No': 0, 
                 'Nama': nama_karyawan,
                 'Tanggal': current_date_in_period,
-                'Log Jam Mentah': '', # New column to store raw times as string
+                'Log Jam Mentah': '',
                 'Jam Datang': None,
                 'Jam Pulang': None,
                 'Jam Istirahat Mulai': None,
@@ -177,28 +185,27 @@ def process_attendance_log(uploaded_file):
                 'Durasi Istirahat': None,
                 'Keterangan Tambahan 1': '', 
                 'Keterangan Tambahan 2': '', 
-                'log_all_times': [] # For internal processing (time objects)
+                'log_all_times': []
             }
 
-
-    # Populate raw_logs list with parsed times and raw string for the new column
-    for i, (nama_karyawan, start_row_idx) in enumerate(employee_names_and_indices):
-        logs_start_row_for_this_block = start_row_idx + 1 
-        # Only process days that are within the specified period
-        sorted_day_nums = sorted([d for d in col_day_mapping_global.keys() if date(tahun_laporan, bulan_laporan, d) >= start_date_periode and date(tahun_laporan, bulan_laporan, d) <= end_date_periode])
-
-        for day_num in sorted_day_nums:
-            col_idx = col_day_mapping_global[day_num]
-            try:
-                # Use the year/month from the Periode line, and the day from the column header
-                current_date = date(tahun_laporan, bulan_laporan, day_num)
-            except ValueError as ve:
-                st.warning(f"Peringatan: Tanggal tidak valid ({tahun_laporan}/{bulan_laporan}/{day_num}) untuk '{nama_karyawan}'. Error: {ve}. Melewati hari ini.")
-                continue
+    # Populate log_karyawan_harian by iterating through all_dates_in_period
+    for nama_karyawan, start_row_idx in employee_names_and_indices:
+        logs_start_row_for_this_block = start_row_idx + 1
+        
+        for current_date in all_dates_in_period: # Iterate through the correctly generated dates
+            day_num = current_date.day # Get the day from the actual date object
             
-            key = (nama_karyawan, current_date)
+            if day_num not in col_day_mapping_global:
+                # This handles cases where a day in the period might not have a corresponding column in the raw data
+                st.warning(f"Peringatan: Kolom untuk hari {day_num} tidak ditemukan di baris nomor hari. Melewati hari ini untuk '{nama_karyawan}'.")
+                continue
+
+            col_idx = col_day_mapping_global[day_num]
+            
+            key = (nama_karyawan, current_date) # Use the correct current_date object
             
             raw_cell_times_strings = [] 
+            parsed_times_for_this_day = []
 
             for r_idx_log in range(logs_start_row_for_this_block, df_raw.shape[0]):
                 if r_idx_log in employee_blocks_indices and r_idx_log != start_row_idx:
@@ -210,6 +217,7 @@ def process_attendance_log(uploaded_file):
                 log_cell_value = str(df_raw.iloc[r_idx_log, col_idx]).strip()
 
                 if pd.isna(log_cell_value) or log_cell_value == '' or log_cell_value == 'nan':
+                    # Heuristic to stop reading if three consecutive empty cells are found
                     if r_idx_log + 2 < df_raw.shape[0]:
                         next_cell_val_1 = str(df_raw.iloc[r_idx_log + 1, col_idx]).strip() if col_idx < df_raw.shape[1] else ''
                         next_cell_val_2 = str(df_raw.iloc[r_idx_log + 2, col_idx]).strip() if col_idx < df_raw.shape[1] else ''
@@ -218,12 +226,11 @@ def process_attendance_log(uploaded_file):
                            (pd.isna(next_cell_val_2) or next_cell_val_2 == '' or next_cell_val_2 == 'nan'):
                             break 
                     else:
-                        break 
+                        break # End of file or end of block
                     
-                    continue 
+                    continue # Continue to next row if current cell is empty but not enough consecutive empties to stop
                 
                 potential_times_in_cell = re.split(r'\s+|\n', log_cell_value)
-                parsed_times_from_this_cell = [] 
 
                 for time_str_raw in potential_times_in_cell:
                     time_str = time_str_raw.strip()
@@ -237,52 +244,45 @@ def process_attendance_log(uploaded_file):
                         try:
                             parsed_time = datetime.strptime(time_str, '%H:%M').time()
                         except ValueError:
-                            try:
-                                if isinstance(df_raw.iloc[r_idx_log, col_idx], (float, int)):
-                                    excel_time_float = df_raw.iloc[r_idx_log, col_idx]
-                                    total_seconds = excel_time_float * 24 * 60 * 60
-                                    hours, remainder = divmod(total_seconds, 3600)
-                                    minutes, seconds = divmod(remainder, 60)
-                                    parsed_time = time(int(hours), int(minutes), int(seconds))
-                                else:
+                            # Try parsing as Excel float time if it's a number
+                            if isinstance(df_raw.iloc[r_idx_log, col_idx], (float, int)):
+                                excel_time_float = df_raw.iloc[r_idx_log, col_idx]
+                                # Excel stores time as a fraction of a day
+                                total_seconds = excel_time_float * 24 * 60 * 60
+                                hours, remainder = divmod(total_seconds, 3600)
+                                minutes, seconds = divmod(remainder, 60)
+                                # Ensure seconds are within valid range (0-59)
+                                seconds = round(seconds)
+                                parsed_time = time(int(hours), int(minutes), int(seconds))
+                            else:
+                                # Fallback to pandas to_datetime for other formats, then extract time
+                                try:
                                     dt_obj = pd.to_datetime(time_str)
                                     parsed_time = dt_obj.time()
-                            except Exception:
-                                pass 
+                                except Exception:
+                                    pass # Could not parse this time string
                     
                     if parsed_time:
-                        # Only add to log_all_times if the date is within the specified period
-                        if start_date_periode <= current_date <= end_date_periode:
-                            log_karyawan_harian[key]['log_all_times'].append(parsed_time)
-                            parsed_times_from_this_cell.append(parsed_time.strftime('%H:%M:%S')) 
+                        parsed_times_for_this_day.append(parsed_time)
+                        raw_cell_times_strings.append(parsed_time.strftime('%H:%M:%S')) 
 
-                if parsed_times_from_this_cell:
-                    raw_cell_times_strings.extend(parsed_times_from_this_cell)
-            
-            # --- IMPORTANT: Ensure 'Log Jam Mentah' is only updated if the date is within the period ---
-            if start_date_periode <= current_date <= end_date_periode and raw_cell_times_strings:
-                # The sorted() here ensures consistent order, which is generally good practice
-                # If you want the EXACT order as in the original cell, remove sorted()
+            # Assign collected times to the correct log_karyawan_harian entry
+            if parsed_times_for_this_day:
+                log_karyawan_harian[key]['log_all_times'].extend(parsed_times_for_this_day)
+                # Sort the raw string times for consistent output
                 log_karyawan_harian[key]['Log Jam Mentah'] = '\n'.join(sorted(raw_cell_times_strings))
-            # Else, it remains empty as initialized for dates outside the actual scanned range
-            
+            # If no times for this day, 'Log Jam Mentah' remains empty as initialized
 
-    # If no logs were extracted at all, return None
-    # This check is now better placed after attempting to parse all logs
     if all(not data['log_all_times'] and not data['Log Jam Mentah'] for data in log_karyawan_harian.values()):
         st.warning("Tidak ada log absensi yang berhasil diekstrak dari file untuk karyawan manapun.")
-        # We might still want to return an empty DataFrame with correct dates if no logs
-        # but for now, if truly no logs, we return None as before.
         return None, None, None
 
     st.success(f"Berhasil mengekstrak log absensi mentah dan menginisialisasi semua tanggal.")
     
-    # Debug raw_logs for some entries
-    # Sample only from keys that actually have logs to avoid showing empty entries here
     sample_raw_logs_df = pd.DataFrame([
         {'Nama': data['Nama'], 'Tanggal': data['Tanggal'], 'Jam': t} 
         for key, data in log_karyawan_harian.items() 
-        if data['log_all_times'] # Only include entries that actually had times
+        if data['log_all_times']
         for t in data['log_all_times']
     ])
     sample_raw_logs_df.sort_values(by=['Nama', 'Tanggal', 'Jam'], inplace=True)
@@ -292,7 +292,6 @@ def process_attendance_log(uploaded_file):
 
     st.info("Mengolah log mentah ke format output yang diinginkan (dengan aturan shift)...")
 
-    # Update kolom_final to include the new 'Log Jam Mentah' column
     kolom_final = ['No', 'Nama', 'Tanggal', 'Log Jam Mentah', 'Jam Datang', 'Jam Pulang', 
                    'Jam Istirahat Mulai', 'Jam Istirahat Selesai', 
                    'Durasi Jam Kerja', 'Durasi Kerja Pembulatan', 'Durasi Istirahat',
@@ -302,75 +301,58 @@ def process_attendance_log(uploaded_file):
     for key, data in log_karyawan_harian.items():
         all_times = sorted(data['log_all_times'])
 
-        # Skip if no logs for this day/employee (keep row with empty times)
         if not all_times:
             continue
 
         # --- Tentukan Jam Datang ---
         data['Jam Datang'] = None
+        # Prioritize morning shift times
         for t_log in all_times:
-            if time(6, 0, 0) <= t_log <= time(9, 0, 0): # Pagi
+            if time(6, 0, 0) <= t_log <= time(9, 0, 0): # Typical morning shift
                 if data['Jam Datang'] is None or t_log < data['Jam Datang']:
                     data['Jam Datang'] = t_log
-            elif time(14, 30, 0) <= t_log <= time(15, 0, 0): # Siang (untuk shift siang mungkin)
-                # Hanya jika belum ada jam datang yang lebih pagi
-                if data['Jam Datang'] is None or t_log < data['Jam Datang']: 
+            elif time(14, 30, 0) <= t_log <= time(16, 0, 0): # Afternoon shift potential
+                 if data['Jam Datang'] is None or t_log < data['Jam Datang']:
                     data['Jam Datang'] = t_log
         
-        # Fallback for Jam Datang if not found in specific windows
+        # Fallback: if no specific window, take the absolute first log as "Jam Datang"
         if data['Jam Datang'] is None and all_times:
             data['Jam Datang'] = all_times[0]
 
 
         # --- Tentukan Jam Pulang ---
         data['Jam Pulang'] = None
-        # Check if it's Saturday (5) or Sunday (6)
-        is_weekend = data['Tanggal'].weekday() in [5, 6] 
+        is_weekend = data['Tanggal'].weekday() in [5, 6] # Saturday (5), Sunday (6)
 
-        if is_weekend:
-            # Prioritize 19:00 - 20:00 for weekends
-            for t_log in reversed(all_times): # Iterate in reverse to find the latest
-                if time(19, 0, 0) <= t_log <= time(20, 0, 0):
+        # Prioritize evening/late night logs
+        for t_log in reversed(all_times):
+            if time(23, 0, 0) <= t_log <= time(23, 59, 59): # Late night
+                data['Jam Pulang'] = t_log
+                break
+            elif time(19, 0, 0) <= t_log <= time(22, 0, 0) and is_weekend: # Evening weekend
+                if data['Jam Pulang'] is None or t_log > data['Jam Pulang']:
                     data['Jam Pulang'] = t_log
-                    break # Found the desired weekend pulang, stop searching
-            
-            # If not found in 19:00-20:00, check other general evening/late night hours
-            if data['Jam Pulang'] is None:
-                for t_log in reversed(all_times):
-                    if time(23, 0, 0) <= t_log <= time(23, 59, 59):
-                        data['Jam Pulang'] = t_log
-                        break
-                    elif time(16, 0, 0) <= t_log <= time(18, 0, 0):
-                        if data['Jam Pulang'] is None or t_log > data['Jam Pulang']: # Ensure we get the latest within range
-                            data['Jam Pulang'] = t_log
-        else: # Weekdays
-            for t_log in reversed(all_times):
-                if time(23, 0, 0) <= t_log <= time(23, 59, 59):
+            elif time(16, 0, 0) <= t_log <= time(18, 0, 0): # Afternoon/Evening weekday
+                if data['Jam Pulang'] is None or t_log > data['Jam Pulang']:
                     data['Jam Pulang'] = t_log
-                    break
-                elif time(16, 0, 0) <= t_log <= time(18, 0, 0):
-                    if data['Jam Pulang'] is None or t_log > data['Jam Pulang']:
-                        data['Jam Pulang'] = t_log
-
-        # Fallback for Jam Pulang if not found in specific windows
+        
+        # Fallback: if no specific window, take the absolute last log as "Jam Pulang"
         if data['Jam Pulang'] is None and all_times:
             data['Jam Pulang'] = all_times[-1]
-
 
         # --- Tentukan Jam Istirahat ---
         potential_break_times = []
         if data['Jam Datang'] and data['Jam Pulang']:
-            # Consider only logs between Jam Datang and Jam Pulang for breaks
-            # This helps to exclude Jam Datang/Pulang if they fall into break windows
+            # Consider logs strictly between "Jam Datang" and "Jam Pulang"
             internal_logs = [t_log for t_log in all_times 
                              if data['Jam Datang'] < t_log < data['Jam Pulang']]
         else:
-            internal_logs = all_times # If no definite start/end, consider all logs
+            internal_logs = all_times
 
         for t_log in internal_logs:
-            if time(11, 0, 0) <= t_log <= time(14, 0, 0):
+            if time(11, 0, 0) <= t_log <= time(14, 0, 0): # Lunch break window
                 potential_break_times.append(t_log)
-            elif time(19, 0, 0) <= t_log <= time(22, 0, 0):
+            elif time(19, 0, 0) <= t_log <= time(22, 0, 0): # Evening break window (e.g., for night shifts)
                 potential_break_times.append(t_log)
         
         if len(potential_break_times) >= 2:
@@ -378,7 +360,6 @@ def process_attendance_log(uploaded_file):
             data['Jam Istirahat Mulai'] = sorted_breaks[0]
             data['Jam Istirahat Selesai'] = sorted_breaks[-1]
         elif len(potential_break_times) == 1:
-            # If only one break log, it's both start and end (break duration will be 0)
             data['Jam Istirahat Mulai'] = potential_break_times[0]
             data['Jam Istirahat Selesai'] = potential_break_times[0]
         else:
@@ -389,6 +370,11 @@ def process_attendance_log(uploaded_file):
         if data['Jam Datang'] and data['Jam Pulang']:
             dt_datang = datetime.combine(data['Tanggal'], data['Jam Datang'])
             dt_pulang = datetime.combine(data['Tanggal'], data['Jam Pulang'])
+            
+            # Handle overnight shifts: if pulang time is earlier than datang, assume it's next day
+            if dt_pulang < dt_datang:
+                dt_pulang += timedelta(days=1)
+
             durasi_kerja_td = dt_pulang - dt_datang
             
             total_seconds = durasi_kerja_td.total_seconds()
@@ -420,6 +406,11 @@ def process_attendance_log(uploaded_file):
         if data['Jam Istirahat Mulai'] and data['Jam Istirahat Selesai']:
             dt_istirahat_mulai = datetime.combine(data['Tanggal'], data['Jam Istirahat Mulai'])
             dt_istirahat_selesai = datetime.combine(data['Tanggal'], data['Jam Istirahat Selesai'])
+            
+            # Handle cases where break might span past midnight (unlikely for a typical break, but good for robustness)
+            if dt_istirahat_selesai < dt_istirahat_mulai:
+                dt_istirahat_selesai += timedelta(days=1)
+
             durasi_istirahat_td = dt_istirahat_selesai - dt_istirahat_mulai
             total_minutes_istirahat = durasi_istirahat_td.total_seconds() / 60
             data['Durasi Istirahat'] = f"{int(total_minutes_istirahat)} menit"
@@ -444,7 +435,7 @@ def process_attendance_log(uploaded_file):
     st.dataframe(df_hasil)
     st.info(f"Total baris: {len(df_hasil)}")
     
-    return df_hasil, bulan_laporan, tahun_laporan # Still return bulan_laporan, tahun_laporan for file name consistency
+    return df_hasil, bulan_laporan, tahun_laporan
 
 uploaded_file = st.file_uploader("Pilih file Excel (.xlsx atau .xls)", type=["xlsx", "xls"])
 
@@ -459,7 +450,6 @@ if uploaded_file is not None:
         
         df_processed_for_excel = df_processed.copy()
         
-        # Ensure all columns exist before processing
         required_cols = ['Keterangan Tambahan 1', 'Keterangan Tambahan 2']
         for col in required_cols:
             if col not in df_processed_for_excel.columns:
@@ -472,7 +462,6 @@ if uploaded_file is not None:
         output_buffer = io.BytesIO()
         
         if bulan_laporan_val is not None and tahun_laporan_val is not None:
-            # Use a more generic name as the period is now specific
             output_file_name = f'Rekap_Absensi_Periode_{bulan_laporan_val:02d}_{tahun_laporan_val}.xlsx'
         else:
             output_file_name = 'Rekap_Absensi_Tanpa_Periode.xlsx'
@@ -481,42 +470,31 @@ if uploaded_file is not None:
         ws = wb.active
         ws.title = 'Rekap Absensi'
 
-        columns_to_lock = [] 
-        
         header_names = list(df_processed_for_excel.columns)
         
-        max_populated_row = df_processed_for_excel.shape[0] + 1 
-        max_rows_for_protection = max(max_populated_row + 50, 1000) 
-        num_cols = len(header_names)
-
-        for r_idx_excel in range(1, max_rows_for_protection + 1):
-            for c_idx in range(num_cols):
-                column_name = header_names[c_idx]
-                cell = ws.cell(row=r_idx_excel, column=c_idx + 1)
-                
-                if r_idx_excel == 1:
-                    cell.value = column_name
-                
-                cell.protection = Protection(locked=False) 
-                
-                # Tambahkan fitur wrap text untuk kolom 'Log Jam Mentah'
-                if column_name == 'Log Jam Mentah':
-                    cell.alignment = cell.alignment.copy(wrapText=True)
-        
-        for r_idx, row_data in enumerate(dataframe_to_rows(df_processed_for_excel, index=False, header=False)):
-            row_num_excel = r_idx + 2 
+        for r_idx, row_data in enumerate(dataframe_to_rows(df_processed_for_excel, index=False, header=True)): # Set header=True to get headers
+            row_num_excel = r_idx + 1 # Start from row 1 for headers, row 2 for data
             for c_idx, cell_value in enumerate(row_data):
                 cell = ws.cell(row=row_num_excel, column=c_idx + 1)
-                cell.value = cell_value 
-                # Pastikan wrap text tetap aktif untuk sel data di kolom 'Log Jam Mentah'
+                cell.value = cell_value
+                # Apply wrap text to 'Log Jam Mentah' column cells (both header and data)
                 if header_names[c_idx] == 'Log Jam Mentah':
                     cell.alignment = cell.alignment.copy(wrapText=True)
-
+                
+                # For data rows, ensure protection is false
+                if row_num_excel > 1: # Data rows
+                    cell.protection = Protection(locked=False)
+                else: # Header row
+                    cell.protection = Protection(locked=True) # Lock headers
 
         DEFAULT_COLUMN_WIDTH = 25
         for i, col_name in enumerate(header_names):
             column_letter = chr(ord('A') + i)
             ws.column_dimensions[column_letter].width = DEFAULT_COLUMN_WIDTH
+
+        # Protect the sheet to only allow editing of unlocked cells
+        # You can set a password if needed: ws.protection.sheet = True; ws.protection.password = 'YourPassword'
+        ws.protection.sheet = True 
 
         wb.save(output_buffer)
         output_buffer.seek(0)
@@ -540,7 +518,7 @@ else:
         ---
         **Format File yang Diharapkan:**
         * File Excel (.xlsx atau .xls) dari mesin sidik jari pertama.
-        * Harus mengandung baris "Periode :YYYY/MM/DD ~ MM/DD" untuk menentukan tahun dan bulan.
+        * Harus mengandung baris "Periode :YYYY/MM/DD ~ MM/DD" atau "Periode :YYYY/MM/DD ~ YYYY/MM/DD" untuk menentukan tahun dan bulan.
         * Harus ada baris nomor hari (1-31) di bawah baris periode.
         * Harus ada blok karyawan yang diawali dengan "No :", diikuti nama karyawan.
         * Log absensi per hari harus ada di kolom-kolom di bawah nomor hari.
