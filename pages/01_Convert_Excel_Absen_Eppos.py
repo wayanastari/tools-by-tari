@@ -6,7 +6,7 @@ import re
 import math
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
-from openpyxl.styles import Protection
+from openpyxl.styles import Protection, Alignment # Import Alignment
 
 # --- Inisialisasi variabel di awal skrip untuk menghindari NameError ---
 df_processed = None
@@ -214,10 +214,11 @@ def process_attendance_log(uploaded_file):
                 if col_idx >= df_raw.shape[1]:
                     continue
 
-                log_cell_value = str(df_raw.iloc[r_idx_log, col_idx]).strip()
+                log_cell_value = df_raw.iloc[r_idx_log, col_idx] # Get the raw cell value first
 
-                if pd.isna(log_cell_value) or log_cell_value == '' or log_cell_value == 'nan':
-                    # Heuristic to stop reading if three consecutive empty cells are found
+                # Heuristic to stop reading if three consecutive empty cells are found
+                # Moved this check here to apply before attempting to process the cell value
+                if pd.isna(log_cell_value) or str(log_cell_value).strip() == '' or str(log_cell_value).strip() == 'nan':
                     if r_idx_log + 2 < df_raw.shape[0]:
                         next_cell_val_1 = str(df_raw.iloc[r_idx_log + 1, col_idx]).strip() if col_idx < df_raw.shape[1] else ''
                         next_cell_val_2 = str(df_raw.iloc[r_idx_log + 2, col_idx]).strip() if col_idx < df_raw.shape[1] else ''
@@ -230,7 +231,9 @@ def process_attendance_log(uploaded_file):
                     
                     continue # Continue to next row if current cell is empty but not enough consecutive empties to stop
                 
-                potential_times_in_cell = re.split(r'\s+|\n', log_cell_value)
+                # Now convert to string for regex splitting
+                time_str_full_cell = str(log_cell_value).strip() 
+                potential_times_in_cell = re.split(r'\s+|\n', time_str_full_cell)
 
                 for time_str_raw in potential_times_in_cell:
                     time_str = time_str_raw.strip()
@@ -239,26 +242,38 @@ def process_attendance_log(uploaded_file):
 
                     parsed_time = None
                     try:
+                        # Attempt 1: HH:MM:SS
                         parsed_time = datetime.strptime(time_str, '%H:%M:%S').time()
                     except ValueError:
                         try:
+                            # Attempt 2: HH:MM
                             parsed_time = datetime.strptime(time_str, '%H:%M').time()
                         except ValueError:
-                            # Try parsing as Excel float time if it's a number
-                            if isinstance(df_raw.iloc[r_idx_log, col_idx], (float, int)):
-                                excel_time_float = df_raw.iloc[r_idx_log, col_idx]
-                                # Excel stores time as a fraction of a day
+                            # Attempt 3: Excel float time
+                            # Only try to parse as float if the raw cell value is a float/int
+                            # AND it's within a reasonable range for an Excel time (0 to <1)
+                            if isinstance(log_cell_value, (float, int)) and 0 <= log_cell_value < 1:
+                                excel_time_float = float(log_cell_value)
                                 total_seconds = excel_time_float * 24 * 60 * 60
-                                hours, remainder = divmod(total_seconds, 3600)
-                                minutes, seconds = divmod(remainder, 60)
-                                # Ensure seconds are within valid range (0-59)
-                                seconds = round(seconds)
-                                parsed_time = time(int(hours), int(minutes), int(seconds))
+                                hours = int(total_seconds // 3600)
+                                remainder = total_seconds % 3600
+                                minutes = int(remainder // 60)
+                                seconds = round(remainder % 60)
+                                
+                                # Ensure hours are within 0-23 range before creating time object
+                                if 0 <= hours <= 23:
+                                    parsed_time = time(hours, minutes, seconds)
+                                else:
+                                    # This indicates it was a number but not a valid time float
+                                    st.warning(f"Peringatan: Nilai numerik '{log_cell_value}' di baris {r_idx_log + 1}, kolom {col_idx + 1} tidak dapat diinterpretasikan sebagai waktu yang valid (jam di luar 0-23).")
+
                             else:
-                                # Fallback to pandas to_datetime for other formats, then extract time
+                                # Attempt 4: Fallback to pandas to_datetime for other general formats
                                 try:
-                                    dt_obj = pd.to_datetime(time_str)
-                                    parsed_time = dt_obj.time()
+                                    # pd.to_datetime is more flexible but can sometimes misinterpret numbers
+                                    dt_obj = pd.to_datetime(time_str, errors='coerce') # Use errors='coerce' to turn unparsable into NaT
+                                    if pd.notna(dt_obj):
+                                        parsed_time = dt_obj.time()
                                 except Exception:
                                     pass # Could not parse this time string
                     
@@ -479,7 +494,7 @@ if uploaded_file is not None:
                 cell.value = cell_value
                 # Apply wrap text to 'Log Jam Mentah' column cells (both header and data)
                 if header_names[c_idx] == 'Log Jam Mentah':
-                    cell.alignment = cell.alignment.copy(wrapText=True)
+                    cell.alignment = Alignment(wrapText=True) # Correct way to set alignment
                 
                 # For data rows, ensure protection is false
                 if row_num_excel > 1: # Data rows
