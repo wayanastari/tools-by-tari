@@ -181,7 +181,7 @@ def process_attendance_log(uploaded_file):
                 'Jam Istirahat Mulai': None,
                 'Jam Istirahat Selesai': None,
                 'Durasi Jam Kerja': None,
-                'Durasi Kerja Pembulatan': None,
+                'Durasi Kerja Pembulatan': None, # This column will be removed later
                 'Durasi Istirahat': None,
                 'Keterangan Tambahan 1': '', 
                 'Keterangan Tambahan 2': '', 
@@ -309,7 +309,7 @@ def process_attendance_log(uploaded_file):
 
     kolom_final = ['No', 'Nama', 'Tanggal', 'Log Jam Mentah', 'Jam Datang', 'Jam Pulang', 
                    'Jam Istirahat Mulai', 'Jam Istirahat Selesai', 
-                   'Durasi Jam Kerja', 'Durasi Kerja Pembulatan', 'Durasi Istirahat',
+                   'Durasi Jam Kerja', 'Durasi Istirahat', # 'Durasi Kerja Pembulatan' dihapus dari sini
                    'Keterangan Tambahan 1', 'Keterangan Tambahan 2'] 
     
     # Process the aggregated daily logs
@@ -404,18 +404,19 @@ def process_attendance_log(uploaded_file):
             
             data['Durasi Jam Kerja'] = ' '.join(durasi_str) if durasi_str else '0 menit'
 
-            total_minutes_for_rounding = total_seconds / 60
-            full_hours = math.floor(total_minutes_for_rounding / 60)
-            remaining_minutes = total_minutes_for_rounding % 60
+            # 'Durasi Kerja Pembulatan' logic is removed as per request
+            # total_minutes_for_rounding = total_seconds / 60
+            # full_hours = math.floor(total_minutes_for_rounding / 60)
+            # remaining_minutes = total_minutes_for_rounding % 60
 
-            if remaining_minutes >= 30:
-                data['Durasi Kerja Pembulatan'] = f"{int(full_hours + 1)} jam"
-            else:
-                data['Durasi Kerja Pembulatan'] = f"{int(full_hours)} jam"
+            # if remaining_minutes >= 30:
+            #     data['Durasi Kerja Pembulatan'] = f"{int(full_hours + 1)} jam"
+            # else:
+            #     data['Durasi Kerja Pembulatan'] = f"{int(full_hours)} jam"
 
         else:
             data['Durasi Jam Kerja'] = ''
-            data['Durasi Kerja Pembulatan'] = ''
+            # data['Durasi Kerja Pembulatan'] = '' # This is also removed
 
         # --- Hitung Durasi Istirahat ---
         if data['Jam Istirahat Mulai'] and data['Jam Istirahat Selesai']:
@@ -438,7 +439,8 @@ def process_attendance_log(uploaded_file):
     sorted_keys = sorted(log_karyawan_harian.keys())
     for key in sorted_keys:
         data = log_karyawan_harian[key]
-        row_data = {col: data.get(col) for col in kolom_final}
+        # Filter out 'Durasi Kerja Pembulatan' before creating the row data
+        row_data = {col: data.get(col) for col in kolom_final if col != 'Durasi Kerja Pembulatan'}
         df_hasil_list.append(row_data)
 
     df_hasil = pd.DataFrame(df_hasil_list)
@@ -496,20 +498,16 @@ if uploaded_file is not None:
                 if header_names[c_idx] == 'Log Jam Mentah':
                     cell.alignment = Alignment(wrapText=True) # Correct way to set alignment
                 
-                # For data rows, ensure protection is false
-                if row_num_excel > 1: # Data rows
-                    cell.protection = Protection(locked=False)
-                else: # Header row
-                    cell.protection = Protection(locked=True) # Lock headers
+                # Menghapus proteksi sel, agar semua sel bisa diedit/dihapus/disembunyikan
+                cell.protection = Protection(locked=False) 
 
         DEFAULT_COLUMN_WIDTH = 25
         for i, col_name in enumerate(header_names):
             column_letter = chr(ord('A') + i)
             ws.column_dimensions[column_letter].width = DEFAULT_COLUMN_WIDTH
 
-        # Protect the sheet to only allow editing of unlocked cells
-        # You can set a password if needed: ws.protection.sheet = True; ws.protection.password = 'YourPassword'
-        ws.protection.sheet = True 
+        # Menonaktifkan proteksi sheet agar bisa dihide/dihapus
+        ws.protection.sheet = False 
 
         wb.save(output_buffer)
         output_buffer.seek(0)
