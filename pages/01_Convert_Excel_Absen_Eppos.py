@@ -331,42 +331,43 @@ def process_attendance_log(uploaded_file):
 
         # Untuk Jam Pulang:
         SHIFT_PAGI_PULANG_START = time(16, 0, 0)
-        SHIFT_PAGI_PULANG_END = time(18, 0, 0)
+        SHIFT_PAGI_PULANG_END = time(19, 0, 0) # Diperluas ke 7 malam
 
-        SHIFT_SIANG_PULANG_START = time(22, 0, 0)
+        SHIFT_SIANG_PULANG_START = time(21, 0, 0) # Dimulai lebih awal
         SHIFT_SIANG_PULANG_END = time(23, 59, 59) # Bisa juga extend ke 00:XX keesokan hari
 
-        SHIFT_MIDDLE_PULANG_START = time(20, 0, 0)
-        SHIFT_MIDDLE_PULANG_END = time(22, 0, 0)
+        SHIFT_MIDDLE_PULANG_START = time(19, 0, 0) # Dimulai dari jam 7 malam
+        SHIFT_MIDDLE_PULANG_END = time(21, 0, 0) # Hingga jam 9 malam
 
         # Jendela Waktu Istirahat
         ISTIRAHAT_SIANG_START = time(11, 30, 0)
         ISTIRAHAT_SIANG_END = time(14, 30, 0)
 
-        ISTIRAHAT_MALAM_START = time(19, 0, 0)
-        ISTIRAHAT_MALAM_END = time(21, 0, 0)
+        ISTIRAHAT_MALAM_START = time(18, 0, 0) # Diperluas ke 6 sore
+        ISTIRAHAT_MALAM_END = time(22, 0, 0) # Diperluas ke 10 malam
 
         # --- Tentukan Jam Datang ---
         data['Jam Datang'] = None
         
-        # Cari log pertama di jendela shift pagi
+        # Prioritas untuk Jam Datang (Shift Pagi -> Shift Middle -> Shift Siang)
         for t_log in all_times:
             if SHIFT_PAGI_DATANG_START <= t_log <= SHIFT_PAGI_DATANG_END:
-                data['Jam Datang'] = t_log
-                break # Ambil yang paling awal di jendela ini
+                if data['Jam Datang'] is None or t_log < data['Jam Datang']:
+                    data['Jam Datang'] = t_log
+                break # Ambil yang paling awal di jendela ini, dan asumsikan ini Jam Datang
 
-        # Jika belum ditemukan, coba jendela shift middle
-        if data['Jam Datang'] is None:
+        if data['Jam Datang'] is None: # Jika belum ditemukan di shift pagi
             for t_log in all_times:
                 if SHIFT_MIDDLE_DATANG_START <= t_log <= SHIFT_MIDDLE_DATANG_END:
-                    data['Jam Datang'] = t_log
+                    if data['Jam Datang'] is None or t_log < data['Jam Datang']:
+                        data['Jam Datang'] = t_log
                     break # Ambil yang paling awal di jendela ini
-        
-        # Jika belum ditemukan, coba jendela shift siang
-        if data['Jam Datang'] is None:
+
+        if data['Jam Datang'] is None: # Jika belum ditemukan di shift middle
             for t_log in all_times:
                 if SHIFT_SIANG_DATANG_START <= t_log <= SHIFT_SIANG_DATANG_END:
-                    data['Jam Datang'] = t_log
+                    if data['Jam Datang'] is None or t_log < data['Jam Datang']:
+                        data['Jam Datang'] = t_log
                     break # Ambil yang paling awal di jendela ini
         
         # Fallback: jika tidak ada yang cocok di jendela shift, ambil log pertama keseluruhan
@@ -377,25 +378,23 @@ def process_attendance_log(uploaded_file):
         # --- Tentukan Jam Pulang ---
         data['Jam Pulang'] = None
         
-        # Cari log terakhir di jendela shift siang/malam (pulang)
-        for t_log in reversed(all_times):
+        # Prioritas untuk Jam Pulang (Shift Siang -> Shift Middle -> Shift Pagi) - mencari log TERAKHIR
+        for t_log in reversed(all_times): # Iterasi terbalik untuk mencari log terakhir
             if SHIFT_SIANG_PULANG_START <= t_log <= SHIFT_SIANG_PULANG_END:
                 data['Jam Pulang'] = t_log
                 break # Ambil yang paling akhir di jendela ini
 
-        # Jika belum ditemukan, coba jendela shift middle (pulang)
         if data['Jam Pulang'] is None:
             for t_log in reversed(all_times):
                 if SHIFT_MIDDLE_PULANG_START <= t_log <= SHIFT_MIDDLE_PULANG_END:
                     data['Jam Pulang'] = t_log
-                    break # Ambil yang paling akhir di jendela ini
-        
-        # Jika belum ditemukan, coba jendela shift pagi (pulang)
+                    break
+
         if data['Jam Pulang'] is None:
             for t_log in reversed(all_times):
                 if SHIFT_PAGI_PULANG_START <= t_log <= SHIFT_PAGI_PULANG_END:
                     data['Jam Pulang'] = t_log
-                    break # Ambil yang paling akhir di jendela ini
+                    break
         
         # Fallback: jika tidak ada yang cocok di jendela shift, ambil log terakhir keseluruhan
         if data['Jam Pulang'] is None and all_times:
@@ -404,34 +403,48 @@ def process_attendance_log(uploaded_file):
         # --- Tentukan Jam Istirahat ---
         potential_break_times = []
         
-        # Kumpulkan semua log yang mungkin di antara Jam Datang dan Jam Pulang
+        # Kumpulkan semua log yang berada di antara Jam Datang dan Jam Pulang
         # dan juga dalam jendela waktu istirahat yang umum
-        for t_log in all_times:
-            if data['Jam Datang'] and data['Jam Pulang'] and \
-               data['Jam Datang'] < t_log < data['Jam Pulang']: # Log harus di antara datang dan pulang
-                if (ISTIRAHAT_SIANG_START <= t_log <= ISTIRAHAT_SIANG_END) or \
-                   (ISTIRAHAT_MALAM_START <= t_log <= ISTIRAHAT_MALAM_END):
-                    potential_break_times.append(t_log)
         
-        # Jika tidak ada Jam Datang atau Jam Pulang, atau log istirahat di luar rentang itu
-        # tetap pertimbangkan log dalam jendela istirahat secara umum
-        if not potential_break_times:
+        # Filter logs that are strictly between Jam Datang and Jam Pulang
+        internal_logs = []
+        if data['Jam Datang'] and data['Jam Pulang']:
+            dt_datang_for_comparison = datetime.combine(data['Tanggal'], data['Jam Datang'])
+            dt_pulang_for_comparison = datetime.combine(data['Tanggal'], data['Jam Pulang'])
+            if dt_pulang_for_comparison < dt_datang_for_comparison:
+                dt_pulang_for_comparison += timedelta(days=1) # Adjust for overnight shifts
+
             for t_log in all_times:
-                if (ISTIRAHAT_SIANG_START <= t_log <= ISTIRAHAT_SIANG_END) or \
-                   (ISTIRAHAT_MALAM_START <= t_log <= ISTIRAHAT_MALAM_END):
-                    potential_break_times.append(t_log)
+                dt_log_for_comparison = datetime.combine(data['Tanggal'], t_log)
+                if t_log < data['Jam Datang']: # Log before check-in is not relevant for break
+                    continue
+                
+                # If it's an overnight shift, handle logs potentially on the next day for comparison
+                if dt_log_for_comparison < dt_datang_for_comparison and t_log < time(5,0,0): # Heuristic for early morning next day logs
+                     dt_log_for_comparison += timedelta(days=1)
+                
+                # Ensure the log is strictly between Jam Datang and Jam Pulang (excluding endpoints)
+                if dt_datang_for_comparison < dt_log_for_comparison < dt_pulang_for_comparison:
+                    internal_logs.append(t_log)
+        else: # If Jam Datang or Jam Pulang not found, all_times are potential (less accurate)
+            internal_logs = all_times # Consider all times as internal logs if no clear check-in/out
 
+        # From internal logs, find those within typical break windows
+        for t_log in internal_logs:
+            if (ISTIRAHAT_SIANG_START <= t_log <= ISTIRAHAT_SIANG_END) or \
+               (ISTIRAHAT_MALAM_START <= t_log <= ISTIRAHAT_MALAM_END):
+                potential_break_times.append(t_log)
+        
+        # Sort these potential break times
+        sorted_potential_break_times = sorted(potential_break_times)
 
-        if len(potential_break_times) >= 2:
-            sorted_breaks = sorted(potential_break_times)
-            data['Jam Istirahat Mulai'] = sorted_breaks[0]
-            data['Jam Istirahat Selesai'] = sorted_breaks[-1]
-        elif len(potential_break_times) == 1:
-            # Jika hanya ada satu log istirahat, kita bisa asumsikan ini adalah 'Jam Istirahat Mulai'
-            # dan 'Jam Istirahat Selesai' juga sama (durasi 0) atau biarkan kosong.
-            # Untuk keamanan, biarkan keduanya sama jika hanya ada satu log.
-            data['Jam Istirahat Mulai'] = potential_break_times[0]
-            data['Jam Istirahat Selesai'] = potential_break_times[0]
+        if len(sorted_potential_break_times) >= 2:
+            data['Jam Istirahat Mulai'] = sorted_potential_break_times[0]
+            data['Jam Istirahat Selesai'] = sorted_potential_break_times[-1]
+        elif len(sorted_potential_break_times) == 1:
+            # Jika hanya ada satu log istirahat, asumsikan ini adalah mulai dan selesai
+            data['Jam Istirahat Mulai'] = sorted_potential_break_times[0]
+            data['Jam Istirahat Selesai'] = sorted_potential_break_times[0]
         else:
             data['Jam Istirahat Mulai'] = None
             data['Jam Istirahat Selesai'] = None
