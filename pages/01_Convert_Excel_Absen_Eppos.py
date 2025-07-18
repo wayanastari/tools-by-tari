@@ -376,6 +376,7 @@ def process_attendance_log(uploaded_file):
 
 
         # --- Tentukan Jam Pulang ---
+         # --- Tentukan Jam Pulang ---
         data['Jam Pulang'] = None
         
         # Prioritas untuk Jam Pulang (Shift Siang -> Shift Middle -> Shift Pagi) - mencari log TERAKHIR
@@ -395,10 +396,7 @@ def process_attendance_log(uploaded_file):
                 if SHIFT_PAGI_PULANG_START <= t_log <= SHIFT_PAGI_PULANG_END:
                     data['Jam Pulang'] = t_log
                     break
-        
-        # Fallback: jika tidak ada yang cocok di jendela shift, ambil log terakhir keseluruhan
-        if data['Jam Pulang'] is None and all_times:
-            data['Jam Pulang'] = all_times[-1]
+    
 
         # --- Tentukan Jam Istirahat ---
         potential_break_times = []
