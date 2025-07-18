@@ -6,7 +6,7 @@ import re
 import math
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
-from openpyxl.styles import Protection, Alignment # Import Alignment
+from openpyxl.styles import Protection, Alignment 
 
 # --- Inisialisasi variabel di awal skrip untuk menghindari NameError ---
 df_processed = None
@@ -321,7 +321,7 @@ def process_attendance_log(uploaded_file):
         # --- Definisi Jendela Waktu Shift ---
         # Untuk Jam Datang:
         SHIFT_PAGI_DATANG_START = time(6, 0, 0)
-        SHIFT_PAGI_DATANG_END = time(9, 30, 0) # Diperluas sedikit untuk fleksibilitas
+        SHIFT_PAGI_DATANG_END = time(9, 30, 0) 
 
         SHIFT_SIANG_DATANG_START = time(13, 0, 0)
         SHIFT_SIANG_DATANG_END = time(16, 0, 0)
@@ -330,22 +330,21 @@ def process_attendance_log(uploaded_file):
         SHIFT_MIDDLE_DATANG_END = time(12, 30, 0)
 
         # Untuk Jam Pulang:
-        # PENTING: Perluas jendela shift agar lebih fleksibel untuk menangkap log
-        SHIFT_PAGI_PULANG_START = time(15, 0, 0) # Digeser lebih awal
+        SHIFT_PAGI_PULANG_START = time(15, 0, 0) 
         SHIFT_PAGI_PULANG_END = time(19, 0, 0) 
 
-        SHIFT_MIDDLE_PULANG_START = time(18, 0, 0) # Digeser lebih awal untuk middle
-        SHIFT_MIDDLE_PULANG_END = time(21, 30, 0) # Diperluas sedikit
+        SHIFT_MIDDLE_PULANG_START = time(18, 0, 0) 
+        SHIFT_MIDDLE_PULANG_END = time(21, 30, 0) 
 
-        SHIFT_SIANG_PULANG_START = time(20, 0, 0) # Digeser lebih awal untuk siang
+        SHIFT_SIANG_PULANG_START = time(20, 0, 0) 
         SHIFT_SIANG_PULANG_END = time(23, 59, 59) 
 
         # Jendela Waktu Istirahat
         ISTIRAHAT_SIANG_START = time(11, 30, 0)
         ISTIRAHAT_SIANG_END = time(14, 30, 0)
 
-        ISTIRAHAT_MALAM_START = time(16, 30, 0) # Diperluas dari jam 4:30 sore
-        ISTIRAHAT_MALAM_END = time(22, 0, 0)   # Diperluas ke 10 malam
+        ISTIRAHAT_MALAM_START = time(16, 30, 0) 
+        ISTIRAHAT_MALAM_END = time(22, 0, 0)   
 
         # --- Tentukan Jam Datang ---
         data['Jam Datang'] = None
@@ -427,10 +426,27 @@ def process_attendance_log(uploaded_file):
                      dt_log_for_comparison += timedelta(days=1)
                 
                 # IMPORTANT CHANGE: Make the comparison inclusive for dt_pulang_for_comparison
+                # This ensures that a log that is also the Jam Pulang can be considered as an Istirahat Selesai
                 if dt_datang_for_comparison < dt_log_for_comparison <= dt_pulang_for_comparison:
                     internal_logs.append(t_log)
+        elif data['Jam Datang'] and not data['Jam Pulang'] and all_times:
+             # If no Jam Pulang, but there's a Jam Datang, consider logs between Datang and the latest log
+            dt_datang_for_comparison = datetime.combine(data['Tanggal'], data['Jam Datang'])
+            dt_latest_log_for_comparison = datetime.combine(data['Tanggal'], all_times[-1])
+            
+            # Adjust if latest log is on the next day (e.g., overnight)
+            if dt_latest_log_for_comparison < dt_datang_for_comparison:
+                dt_latest_log_for_comparison += timedelta(days=1)
+
+            for t_log in all_times:
+                dt_log_for_comparison = datetime.combine(data['Tanggal'], t_log)
+                if t_log < time(5,0,0) and dt_log_for_comparison < dt_datang_for_comparison:
+                    dt_log_for_comparison += timedelta(days=1)
+
+                if dt_datang_for_comparison < dt_log_for_comparison <= dt_latest_log_for_comparison:
+                    internal_logs.append(t_log)
         else: # If Jam Datang or Jam Pulang not found, all_times are potential (less accurate)
-            internal_logs = all_times # Consider all times as internal logs if no clear check-in/out
+            internal_logs = all_times 
 
         # From internal logs, find those within typical break windows
         for t_log in internal_logs:
@@ -547,16 +563,15 @@ if uploaded_file is not None:
 
         header_names = list(df_processed_for_excel.columns)
         
-        for r_idx, row_data in enumerate(dataframe_to_rows(df_processed_for_excel, index=False, header=True)): # Set header=True to get headers
-            row_num_excel = r_idx + 1 # Start from row 1 for headers, row 2 for data
+        for r_idx, row_data in enumerate(dataframe_to_rows(df_processed_for_excel, index=False, header=True)): 
+            row_num_excel = r_idx + 1 
             for c_idx, cell_value in enumerate(row_data):
                 cell = ws.cell(row=row_num_excel, column=c_idx + 1)
                 cell.value = cell_value
-                # Apply wrap text to 'Log Jam Mentah' column cells (both header and data)
-                if header_names[c_idx] == 'Log Jam Mentah':
-                    cell.alignment = Alignment(wrapText=True) # Correct way to set alignment
                 
-                # Menghapus proteksi sel, agar semua sel bisa diedit/dihapus/disembunyikan
+                if header_names[c_idx] == 'Log Jam Mentah':
+                    cell.alignment = Alignment(wrapText=True) 
+                
                 cell.protection = Protection(locked=False) 
 
         DEFAULT_COLUMN_WIDTH = 25
@@ -564,7 +579,6 @@ if uploaded_file is not None:
             column_letter = chr(ord('A') + i)
             ws.column_dimensions[column_letter].width = DEFAULT_COLUMN_WIDTH
 
-        # Menonaktifkan proteksi sheet agar bisa dihide/dihapus
         ws.protection.sheet = False 
 
         wb.save(output_buffer)
