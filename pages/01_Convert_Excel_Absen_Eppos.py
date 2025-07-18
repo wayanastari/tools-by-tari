@@ -354,21 +354,21 @@ def process_attendance_log(uploaded_file):
             if SHIFT_PAGI_DATANG_START <= t_log <= SHIFT_PAGI_DATANG_END:
                 if data['Jam Datang'] is None or t_log < data['Jam Datang']:
                     data['Jam Datang'] = t_log
-                break # Ambil yang paling awal di jendela ini, dan asumsikan ini Jam Datang
+                break 
 
-        if data['Jam Datang'] is None: # Jika belum ditemukan di shift pagi
+        if data['Jam Datang'] is None: 
             for t_log in all_times:
                 if SHIFT_MIDDLE_DATANG_START <= t_log <= SHIFT_MIDDLE_DATANG_END:
                     if data['Jam Datang'] is None or t_log < data['Jam Datang']:
                         data['Jam Datang'] = t_log
-                    break # Ambil yang paling awal di jendela ini
+                    break 
 
-        if data['Jam Datang'] is None: # Jika belum ditemukan di shift middle
+        if data['Jam Datang'] is None: 
             for t_log in all_times:
                 if SHIFT_SIANG_DATANG_START <= t_log <= SHIFT_SIANG_DATANG_END:
                     if data['Jam Datang'] is None or t_log < data['Jam Datang']:
                         data['Jam Datang'] = t_log
-                    break # Ambil yang paling awal di jendela ini
+                    break 
         
         # Fallback: jika tidak ada yang cocok di jendela shift, ambil log pertama keseluruhan
         if data['Jam Datang'] is None and all_times:
@@ -386,86 +386,87 @@ def process_attendance_log(uploaded_file):
         for t_log in reversed(all_times):
             if SHIFT_SIANG_PULANG_START <= t_log <= SHIFT_SIANG_PULANG_END:
                 found_pulang_time = t_log
-                break # Ditemukan log pulang terakhir di jendela ini
+                break 
 
         # 2. Jika belum ditemukan, coba di jendela SHIFT_MIDDLE_PULANG
         if found_pulang_time is None:
             for t_log in reversed(all_times):
                 if SHIFT_MIDDLE_PULANG_START <= t_log <= SHIFT_MIDDLE_PULANG_END:
                     found_pulang_time = t_log
-                    break # Ditemukan log pulang terakhir di jendela ini
+                    break 
 
         # 3. Jika belum ditemukan, coba di jendela SHIFT_PAGI_PULANG
         if found_pulang_time is None:
             for t_log in reversed(all_times):
                 if SHIFT_PAGI_PULANG_START <= t_log <= SHIFT_PAGI_PULANG_END:
                     found_pulang_time = t_log
-                    break # Ditemukan log pulang terakhir di jendela ini
+                    break 
 
-        data['Jam Pulang'] = found_pulang_time # Jika tidak ada yang cocok, ini akan tetap None
+        data['Jam Pulang'] = found_pulang_time 
 
         # --- Tentukan Jam Istirahat ---
-        potential_break_times = []
+        data['Jam Istirahat Mulai'] = None
+        data['Jam Istirahat Selesai'] = None
         
-        # Filter logs that are strictly after Jam Datang and up to Jam Pulang (inclusive of Jam Pulang)
-        internal_logs = []
-        if data['Jam Datang'] and data['Jam Pulang']:
+        potential_break_times_filtered = [] 
+
+        # Determine the effective end of the working day for internal logs to filter logs for break
+        effective_end_of_day_for_internal_logs = None
+        if data['Jam Pulang']:
+            effective_end_of_day_for_internal_logs = data['Jam Pulang']
+        elif all_times: # If no explicit Jam Pulang, use the very last log as the 'end' for filtering internal logs
+            effective_end_of_day_for_internal_logs = all_times[-1]
+
+        if data['Jam Datang'] and effective_end_of_day_for_internal_logs:
             dt_datang_for_comparison = datetime.combine(data['Tanggal'], data['Jam Datang'])
-            dt_pulang_for_comparison = datetime.combine(data['Tanggal'], data['Jam Pulang'])
+            dt_effective_end_for_comparison = datetime.combine(data['Tanggal'], effective_end_of_day_for_internal_logs)
             
-            # Handle overnight shifts: if pulang time is earlier than datang, assume it's next day
-            if dt_pulang_for_comparison < dt_datang_for_comparison:
-                dt_pulang_for_comparison += timedelta(days=1)
+            # Handle overnight shifts for comparison
+            if dt_effective_end_for_comparison < dt_datang_for_comparison:
+                dt_effective_end_for_comparison += timedelta(days=1)
 
             for t_log in all_times:
                 dt_log_for_comparison = datetime.combine(data['Tanggal'], t_log)
                 
                 # Adjust for potential overnight logs (e.g., if a log for the next day appears before 5 AM)
-                # This ensures logs like 00:XX:XX are correctly compared if they are part of an overnight sequence
                 if t_log < time(5,0,0) and dt_log_for_comparison < dt_datang_for_comparison: 
                      dt_log_for_comparison += timedelta(days=1)
                 
-                # IMPORTANT CHANGE: Make the comparison inclusive for dt_pulang_for_comparison
-                # This ensures that a log that is also the Jam Pulang can be considered as an Istirahat Selesai
-                if dt_datang_for_comparison < dt_log_for_comparison <= dt_pulang_for_comparison:
-                    internal_logs.append(t_log)
-        elif data['Jam Datang'] and not data['Jam Pulang'] and all_times:
-             # If no Jam Pulang, but there's a Jam Datang, consider logs between Datang and the latest log
-            dt_datang_for_comparison = datetime.combine(data['Tanggal'], data['Jam Datang'])
-            dt_latest_log_for_comparison = datetime.combine(data['Tanggal'], all_times[-1])
-            
-            # Adjust if latest log is on the next day (e.g., overnight)
-            if dt_latest_log_for_comparison < dt_datang_for_comparison:
-                dt_latest_log_for_comparison += timedelta(days=1)
-
-            for t_log in all_times:
-                dt_log_for_comparison = datetime.combine(data['Tanggal'], t_log)
-                if t_log < time(5,0,0) and dt_log_for_comparison < dt_datang_for_comparison:
-                    dt_log_for_comparison += timedelta(days=1)
-
-                if dt_datang_for_comparison < dt_log_for_comparison <= dt_latest_log_for_comparison:
-                    internal_logs.append(t_log)
-        else: # If Jam Datang or Jam Pulang not found, all_times are potential (less accurate)
-            internal_logs = all_times 
-
-        # From internal logs, find those within typical break windows
-        for t_log in internal_logs:
-            if (ISTIRAHAT_SIANG_START <= t_log <= ISTIRAHAT_SIANG_END) or \
-               (ISTIRAHAT_MALAM_START <= t_log <= ISTIRAHAT_MALAM_END):
-                potential_break_times.append(t_log)
+                # Only consider logs that are *strictly* after Jam Datang and up to effective_end_of_day
+                if dt_datang_for_comparison < dt_log_for_comparison <= dt_effective_end_for_comparison:
+                    if (ISTIRAHAT_SIANG_START <= t_log <= ISTIRAHAT_SIANG_END) or \
+                       (ISTIRAHAT_MALAM_START <= t_log <= ISTIRAHAT_MALAM_END):
+                        potential_break_times_filtered.append(t_log)
         
-        # Sort these potential break times
-        sorted_potential_break_times = sorted(potential_break_times)
+        sorted_potential_break_times = sorted(potential_break_times_filtered)
 
-        if len(sorted_potential_break_times) >= 2:
+        if len(sorted_potential_break_times) >= 1: 
             data['Jam Istirahat Mulai'] = sorted_potential_break_times[0]
-            data['Jam Istirahat Selesai'] = sorted_potential_break_times[-1]
-        elif len(sorted_potential_break_times) == 1:
-            data['Jam Istirahat Mulai'] = sorted_potential_break_times[0]
-            data['Jam Istirahat Selesai'] = sorted_potential_break_times[0] 
-        else:
-            data['Jam Istirahat Mulai'] = None
-            data['Jam Istirahat Selesai'] = None
+
+            # Logic for Jam Istirahat Selesai:
+            if len(sorted_potential_break_times) == 1:
+                data['Jam Istirahat Selesai'] = sorted_potential_break_times[0]
+            else:
+                last_break_time_candidate = sorted_potential_break_times[-1]
+                second_last_break_time_candidate = sorted_potential_break_times[-2] 
+
+                # Define a threshold for "significant difference" for break continuation
+                # If the gap between break logs is > 1 hour, maybe the later one is not part of the same break.
+                MAX_CONTINUOUS_BREAK_GAP_MINUTES = 60 
+
+                if (data['Jam Pulang'] and last_break_time_candidate == data['Jam Pulang']):
+                    # Check if Jam Pulang is also a break time, and if it's far from the previous break log
+                    td_gap = datetime.combine(date.min, last_break_time_candidate) - datetime.combine(date.min, second_last_break_time_candidate)
+                    if td_gap.total_seconds() / 60 > MAX_CONTINUOUS_BREAK_GAP_MINUTES:
+                        # If Jam Pulang is very far from the previous break log, pick the previous one.
+                        data['Jam Istirahat Selesai'] = second_last_break_time_candidate
+                    else:
+                        # If Jam Pulang is close to the previous break log, it's likely the break end.
+                        data['Jam Istirahat Selesai'] = last_break_time_candidate
+                else:
+                    # If Jam Pulang is not the last break candidate, or there's only one break log,
+                    # or the gap is not significant, just use the last break time candidate.
+                    data['Jam Istirahat Selesai'] = last_break_time_candidate
 
         # --- Hitung Durasi Jam Kerja ---
         if data['Jam Datang'] and data['Jam Pulang']:
