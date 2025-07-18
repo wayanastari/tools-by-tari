@@ -343,7 +343,7 @@ def process_attendance_log(uploaded_file):
         ISTIRAHAT_SIANG_START = time(11, 30, 0)
         ISTIRAHAT_SIANG_END = time(14, 30, 0)
 
-        ISTIRAHAT_MALAM_START = time(18, 0, 0) # Diperluas ke 6 sore
+        ISTIRAHAT_MALAM_START = time(16, 30, 0) # Diperluas ke 6 sore
         ISTIRAHAT_MALAM_END = time(22, 0, 0) # Diperluas ke 10 malam
 
         # --- Tentukan Jam Datang ---
