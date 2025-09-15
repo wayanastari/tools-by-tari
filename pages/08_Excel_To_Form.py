@@ -19,27 +19,14 @@ def get_filled_workbook(data_df, form_wb):
         for index, row in data_df.iterrows():
             start_row = index * form_height + 1
             
-            # Salin isi form template, termasuk pemformatan jika ada
+            # Salin isi form template, termasuk format dasar
             for r in range(1, form_ws.max_row + 1):
                 for c in range(1, form_ws.max_column + 1):
                     cell = form_ws.cell(row=r, column=c)
                     new_cell = result_ws.cell(row=start_row + r - 1, column=c)
                     new_cell.value = cell.value
-                    if cell.has_hyperlink:
-                        new_cell.hyperlink = cell.hyperlink
-                    if cell.font:
-                        new_cell.font = openpyxl.copy(cell.font)
-                    if cell.fill:
-                        new_cell.fill = openpyxl.copy(cell.fill)
-                    if cell.border:
-                        new_cell.border = openpyxl.copy(cell.border)
-                    if cell.alignment:
-                        new_cell.alignment = openpyxl.copy(cell.alignment)
 
-            # Mengisi data ke sel yang sesuai berdasarkan pemetaan Anda sebelumnya
-            # Pemetaan: Nama Bayi/Balita (C2), NIK (C3), Tanggal Lahir (C4), BB (C5), TB (C6), Nama Ayah/Ibu (C7)
-            # Karena formnya memanjang, saya asumsikan sel-nya adalah C2, C3, dst.
-            
+            # Mengisi data ke sel yang sesuai
             nama_bayi = str(row.get('Nama Bayi/Balita', ''))
             nik = str(row.get('NIK', ''))
             tgl_lahir = str(row.get('TANGGAL LAHIR', ''))
@@ -55,8 +42,9 @@ def get_filled_workbook(data_df, form_wb):
                 gender = 'Perempuan'
 
             # Update nilai sel pada worksheet hasil
+            # Kolom-kolom ini harus disesuaikan dengan posisi yang benar di form template Anda
             result_ws.cell(row=start_row + 1, column=3, value=nama_bayi)
-            result_ws.cell(row=start_row + 1, column=9, value=gender) # Kolom J
+            result_ws.cell(row=start_row + 1, column=9, value=gender)
             result_ws.cell(row=start_row + 2, column=3, value=nik)
             result_ws.cell(row=start_row + 3, column=3, value=tgl_lahir)
             result_ws.cell(row=start_row + 4, column=3, value=f"{bb} Kg" if bb else "")
@@ -85,7 +73,7 @@ if data_file_upload and form_file_upload:
             try:
                 # Baca data
                 if data_file_upload.name.endswith('.csv'):
-                    data_df = pd.read_csv(data_file_upload)
+                    data_df = pd.read_csv(data_file_upload, encoding='latin1')
                 else:
                     data_df = pd.read_excel(data_file_upload)
                 
