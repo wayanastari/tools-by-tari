@@ -8,49 +8,67 @@ st.set_page_config(page_title="Generator Form Excel Otomatis", layout="wide")
 def get_filled_workbook(data_df, form_wb):
     """Mengisi form template dengan data dari DataFrame."""
     try:
+        # Baca template form
         form_ws = form_wb.active
+        
+        # Tentukan tinggi form template (jumlah baris yang ingin disalin)
+        # Berdasarkan gambar form, ada 9 baris data
+        form_height = 9 
+
+        # Buat workbook baru untuk hasil
         result_wb = openpyxl.Workbook()
         result_ws = result_wb.active
-        
-        # Asumsi header berada di baris pertama
-        headers = ["Nama Bayi/Balita", "NIK", "Tanggal Lahir", "Berat Badan Lahir", "Panjang Badan Lahir", "Nama Ayah/Ibu", "Alamat", "No. Hp"]
-        result_ws.append(headers)
 
         # Loop setiap baris data dan isi form
         for index, row in data_df.iterrows():
+            # Tentukan baris awal untuk form baru
+            start_row = index * (form_height + 1) + 1  # +1 untuk baris kosong
+
+            # Salin isi form template
+            for r in range(1, form_ws.max_row + 1):
+                for c in range(1, form_ws.max_column + 1):
+                    cell = form_ws.cell(row=r, column=c)
+                    new_cell = result_ws.cell(row=start_row + r - 1, column=c)
+                    new_cell.value = cell.value
+
+            # Mengisi data ke sel yang sesuai berdasarkan posisi yang diindikasikan
+            # Nama Bayi/Balita di C2
+            # NIK di C3
+            # Tanggal Lahir di C4
+            # Berat Badan di C5
+            # Panjang Badan di C6
+            # Nama Ayah di C7
+            # Nama Ibu di C8
+            # Alamat di C9
+            # No. Hp di C10
+
             nama_bayi = str(row.get('Nama Bayi/Balita', ''))
             nik = str(row.get('NIK', ''))
             tgl_lahir = str(row.get('TANGGAL LAHIR', ''))
             bb = str(row.get('BB', ''))
             tb = str(row.get('TB', ''))
-            ayah_ibu = f"{str(row.get('AYAH', ''))} / {str(row.get('IBU', ''))}"
-
-            # Mengisi jenis kelamin
-            gender = ''
-            if pd.notna(row.get('L')) and row.get('L') == 1:
-                gender = 'Laki-laki'
-            elif pd.notna(row.get('P')) and row.get('P') == 1:
-                gender = 'Perempuan'
-
-            # Gabungkan Nama Bayi/Balita dengan Jenis Kelamin
-            nama_bayi_lengkap = f"{nama_bayi} ({gender})"
+            nama_ayah = str(row.get('AYAH', ''))
+            nama_ibu = str(row.get('IBU', ''))
             
-            # Buat list data untuk satu baris
-            data_row = [
-                nama_bayi_lengkap,
-                nik,
-                tgl_lahir,
-                f"{bb} Kg" if bb else "",
-                f"{tb} Cm" if tb else "",
-                ayah_ibu,
-                # Asumsi tidak ada data Alamat dan No. Hp
-                "",
-                ""
-            ]
+            # Asumsi tidak ada data Alamat dan No. Hp
+            alamat = "" 
+            no_hp = ""
 
-            # Tambahkan baris data ke worksheet hasil
-            result_ws.append(data_row)
-        
+            # Mengisi jenis kelamin dan menghapus yang tidak relevan
+            gender_text = '(Perempuan)' if pd.notna(row.get('P')) and row.get('P') == 1 else '(Laki-laki)'
+            result_ws.cell(row=start_row + 1, column=11).value = gender_text
+
+            # Update nilai sel pada worksheet hasil
+            result_ws.cell(row=start_row + 1, column=3, value=nama_bayi)
+            result_ws.cell(row=start_row + 2, column=3, value=nik)
+            result_ws.cell(row=start_row + 3, column=3, value=tgl_lahir)
+            result_ws.cell(row=start_row + 4, column=3, value=f"{bb} Kg" if bb else "")
+            result_ws.cell(row=start_row + 5, column=3, value=f"{tb} Cm" if tb else "")
+            result_ws.cell(row=start_row + 6, column=3, value=nama_ayah)
+            result_ws.cell(row=start_row + 7, column=3, value=nama_ibu)
+            result_ws.cell(row=start_row + 8, column=3, value=alamat)
+            result_ws.cell(row=start_row + 9, column=3, value=no_hp)
+            
         return result_wb
 
     except Exception as e:
