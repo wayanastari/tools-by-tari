@@ -12,7 +12,6 @@ def get_filled_workbook(data_df, form_wb):
         form_ws = form_wb.active
         
         # Tentukan tinggi form template (jumlah baris yang ingin disalin)
-        # Berdasarkan gambar form, ada 9 baris data
         form_height = 9 
 
         # Buat workbook baru untuk hasil
@@ -32,16 +31,6 @@ def get_filled_workbook(data_df, form_wb):
                     new_cell.value = cell.value
 
             # Mengisi data ke sel yang sesuai berdasarkan posisi yang diindikasikan
-            # Nama Bayi/Balita di C2
-            # NIK di C3
-            # Tanggal Lahir di C4
-            # Berat Badan di C5
-            # Panjang Badan di C6
-            # Nama Ayah di C7
-            # Nama Ibu di C8
-            # Alamat di C9
-            # No. Hp di C10
-
             nama_bayi = str(row.get('Nama Bayi/Balita', ''))
             nik = str(row.get('NIK', ''))
             tgl_lahir = str(row.get('TANGGAL LAHIR', ''))
@@ -49,10 +38,8 @@ def get_filled_workbook(data_df, form_wb):
             tb = str(row.get('TB', ''))
             nama_ayah = str(row.get('AYAH', ''))
             nama_ibu = str(row.get('IBU', ''))
-            
-            # Asumsi tidak ada data Alamat dan No. Hp
-            alamat = "" 
-            no_hp = ""
+            alamat = str(row.get('Alamat', ''))
+            no_hp = str(row.get('No. Hp', ''))
 
             # Mengisi jenis kelamin dan menghapus yang tidak relevan
             gender_text = '(Perempuan)' if pd.notna(row.get('P')) and row.get('P') == 1 else '(Laki-laki)'
