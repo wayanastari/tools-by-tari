@@ -42,38 +42,37 @@ def get_filled_workbook(data_df, form_wb):
                     new_cell.value = cell.value
 
             # Mengisi data ke sel yang sesuai berdasarkan posisi yang diindikasikan
-            nama_bayi = str(row.get('Nama Bayi/Balita', ''))
+            
+            # Fungsi pembantu untuk mengisi nilai dengan '-' jika kosong
+            def get_value_or_dash(value):
+                return str(value) if pd.notna(value) and str(value).strip() != '' else '-'
+
+            nama_bayi = get_value_or_dash(row.get('Nama Bayi/Balita'))
             
             # Perbaikan untuk NIK
             nik_val = row.get('NIK', '')
-            nik = str(int(nik_val)) if pd.notna(nik_val) else ''
+            nik = str(int(nik_val)) if pd.notna(nik_val) else '-'
 
             # Perbaikan untuk Tanggal Lahir (format DD MMMM YYYY)
             tgl_lahir_val = row.get('TANGGAL LAHIR', '')
+            tgl_lahir = '-'
             if pd.notna(tgl_lahir_val):
                 try:
                     # Menggunakan datetime untuk memformat tanggal
-                    tgl_lahir = pd.to_datetime(tgl_lahir_val).strftime('%d %B %Y')
-                    # Mengubah nama bulan dalam bahasa Indonesia
-                    bulan_dict = {
-                        'January': 'Januari', 'February': 'Februari', 'March': 'Maret',
-                        'April': 'April', 'May': 'Mei', 'June': 'Juni',
-                        'July': 'Juli', 'August': 'Agustus', 'September': 'September',
-                        'October': 'Oktober', 'November': 'November', 'December': 'Desember'
-                    }
-                    for en, id in bulan_dict.items():
-                        tgl_lahir = tgl_lahir.replace(en, id)
+                    tgl_lahir_dt = pd.to_datetime(tgl_lahir_val)
+                    # Mengatur bahasa lokal untuk nama bulan
+                    import locale
+                    locale.setlocale(locale.LC_TIME, 'id_ID.UTF-8')
+                    tgl_lahir = tgl_lahir_dt.strftime('%d %B %Y')
                 except:
                     tgl_lahir = str(tgl_lahir_val)
-            else:
-                tgl_lahir = ''
 
-            bb = str(row.get('BB', ''))
-            tb = str(row.get('TB', ''))
-            nama_ayah = str(row.get('AYAH', ''))
-            nama_ibu = str(row.get('IBU', ''))
-            alamat = str(row.get(col_alamat, '')) if col_alamat else ""
-            no_hp = str(row.get(col_no_hp, '')) if col_no_hp else ""
+            bb = get_value_or_dash(row.get('BB'))
+            tb = get_value_or_dash(row.get('TB'))
+            nama_ayah = get_value_or_dash(row.get('AYAH'))
+            nama_ibu = get_value_or_dash(row.get('IBU'))
+            alamat = get_value_or_dash(row.get(col_alamat)) if col_alamat else "-"
+            no_hp = get_value_or_dash(row.get(col_no_hp)) if col_no_hp else "-"
             
             # Mengisi jenis kelamin dan menghapus yang tidak relevan
             gender_text = '(Perempuan)' if pd.notna(row.get('P')) and row.get('P') == 1 else '(Laki-laki)'
@@ -83,8 +82,8 @@ def get_filled_workbook(data_df, form_wb):
             result_ws.cell(row=start_row + 1, column=3, value=nama_bayi)
             result_ws.cell(row=start_row + 2, column=3, value=nik)
             result_ws.cell(row=start_row + 3, column=3, value=tgl_lahir)
-            result_ws.cell(row=start_row + 4, column=3, value=f"{bb} Kg" if bb else "")
-            result_ws.cell(row=start_row + 5, column=3, value=f"{tb} Cm" if tb else "")
+            result_ws.cell(row=start_row + 4, column=3, value=f"{bb} Kg" if bb != '-' else '-')
+            result_ws.cell(row=start_row + 5, column=3, value=f"{tb} Cm" if tb != '-' else '-')
             result_ws.cell(row=start_row + 6, column=3, value=nama_ayah)
             result_ws.cell(row=start_row + 7, column=3, value=nama_ibu)
             result_ws.cell(row=start_row + 8, column=3, value=alamat)
