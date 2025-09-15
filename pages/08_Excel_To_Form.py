@@ -129,34 +129,37 @@ def map_data_to_form(data_row, template_ws, output_ws, start_row):
             # Map data based on label
             if 'nama bayi' in label_text or 'nama anak' in label_text:
                 if 'Nama Bayi/Balita' in data_row.index:
-                    target_data_cell.value = data_row['Nama Bayi/Balita']
+                    target_data_cell.value = f": {data_row['Nama Bayi/Balita']}"
                 elif 'NAMA ANAK' in data_row.index:
-                    target_data_cell.value = data_row['NAMA ANAK']
+                    target_data_cell.value = f": {data_row['NAMA ANAK']}"
             
             elif 'nik' in label_text:
                 if 'NIK' in data_row.index:
                     nik_value = data_row['NIK']
                     # Handle NIK as string to prevent scientific notation
                     if pd.notna(nik_value):
-                        target_data_cell.value = str(nik_value).replace('.0', '')
+                        clean_nik = str(nik_value).replace('.0', '')
+                        target_data_cell.value = f": {clean_nik}"
                         # Set cell format to text
                         target_data_cell.number_format = '@'
             
             elif 'tanggal' in label_text and 'lahir' in label_text:
                 if 'TANGGAL LAHIR' in data_row.index:
-                    target_data_cell.value = format_date_value(data_row['TANGGAL LAHIR'])
+                    date_value = format_date_value(data_row['TANGGAL LAHIR'])
+                    if date_value:
+                        target_data_cell.value = f": {date_value}"
             
             elif 'berat badan' in label_text:
                 if 'BB' in data_row.index:
                     bb_value = data_row['BB']
                     if pd.notna(bb_value):
-                        target_data_cell.value = str(bb_value)
+                        target_data_cell.value = f": {bb_value}"
             
             elif 'panjang badan' in label_text or 'tinggi badan' in label_text:
                 if 'TB' in data_row.index:
                     tb_value = data_row['TB']
                     if pd.notna(tb_value):
-                        target_data_cell.value = str(tb_value)
+                        target_data_cell.value = f": {tb_value}"
             
             elif 'nama ayah' in label_text and 'ibu' not in label_text:
                 # This is specifically for Ayah row
@@ -164,7 +167,7 @@ def map_data_to_form(data_row, template_ws, output_ws, start_row):
                 if 'AYAH' in data_row.index:
                     ayah_value = data_row['AYAH']
                     if pd.notna(ayah_value):
-                        target_data_cell.value = str(ayah_value)
+                        target_data_cell.value = f": {ayah_value}"
             
             elif 'nama' in label_text and 'ibu' in label_text and 'ayah' not in label_text:
                 # This is specifically for Ibu row
@@ -172,13 +175,13 @@ def map_data_to_form(data_row, template_ws, output_ws, start_row):
                 if 'IBU' in data_row.index:
                     ibu_value = data_row['IBU']
                     if pd.notna(ibu_value):
-                        target_data_cell.value = str(ibu_value)
+                        target_data_cell.value = f": {ibu_value}"
             
             elif 'ayah' in label_text and 'ibu' in label_text:
-                # Combined Ayah/Ibu field - use first one found
+                # Combined Ayah/Ibu field - use first one found (Ayah)
                 ayah = data_row.get('AYAH', '') if 'AYAH' in data_row.index else ''
                 if pd.notna(ayah) and ayah:
-                    target_data_cell.value = str(ayah)
+                    target_data_cell.value = f": {ayah}"
                     # Check if next row is for Ibu
                     next_row_idx = row_idx + 1
                     if next_row_idx <= form_height:
@@ -187,19 +190,19 @@ def map_data_to_form(data_row, template_ws, output_ws, start_row):
                             next_target_cell = output_ws.cell(row=start_row + next_row_idx - 1, column=next_dots_col)
                             ibu = data_row.get('IBU', '') if 'IBU' in data_row.index else ''
                             if pd.notna(ibu) and ibu:
-                                next_target_cell.value = str(ibu)
+                                next_target_cell.value = f": {ibu}"
             
             elif 'alamat' in label_text:
                 if 'ALAMAT' in data_row.index:
                     alamat_value = data_row['ALAMAT']
                     if pd.notna(alamat_value):
-                        target_data_cell.value = str(alamat_value)
+                        target_data_cell.value = f": {alamat_value}"
             
             elif 'no' in label_text and 'hp' in label_text:
                 if 'No. Hp' in data_row.index:
                     hp_value = data_row['No. Hp']
                     if pd.notna(hp_value):
-                        target_data_cell.value = str(hp_value)
+                        target_data_cell.value = f": {hp_value}"
     
     # Handle gender selection (Laki-laki/Perempuan)
     if 'JENIS KELAMIN' in data_row.index or 'JENIS' in data_row.index:
