@@ -32,24 +32,26 @@ def get_filled_workbook(data_df, form_wb):
             tgl_lahir = str(row.get('TANGGAL LAHIR', ''))
             bb = str(row.get('BB', ''))
             tb = str(row.get('TB', ''))
-            ayah_ibu = f"{row.get('AYAH', '')} / {row.get('IBU', '')}"
             
-            # Mengisi jenis kelamin
-            gender = ''
-            if pd.notna(row.get('L')) and row.get('L') == 1:
-                gender = 'Laki-laki'
-            elif pd.notna(row.get('P')) and row.get('P') == 1:
-                gender = 'Perempuan'
+            # Mengisi jenis kelamin dan menghapus yang tidak relevan
+            gender_text = '(Perempuan)' if pd.notna(row.get('P')) and row.get('P') == 1 else '(Laki-laki)'
+            result_ws.cell(row=start_row + 1, column=11).value = gender_text
+
+            # Memisahkan nama Ayah dan Ibu menjadi 2 baris
+            nama_ayah = str(row.get('AYAH', ''))
+            nama_ibu = str(row.get('IBU', ''))
 
             # Update nilai sel pada worksheet hasil
-            # Kolom-kolom ini harus disesuaikan dengan posisi yang benar di form template Anda
             result_ws.cell(row=start_row + 1, column=3, value=nama_bayi)
-            result_ws.cell(row=start_row + 1, column=9, value=gender)
             result_ws.cell(row=start_row + 2, column=3, value=nik)
             result_ws.cell(row=start_row + 3, column=3, value=tgl_lahir)
             result_ws.cell(row=start_row + 4, column=3, value=f"{bb} Kg" if bb else "")
             result_ws.cell(row=start_row + 5, column=3, value=f"{tb} Cm" if tb else "")
-            result_ws.cell(row=start_row + 6, column=3, value=ayah_ibu)
+            
+            # Menulis nama Ayah dan Ibu di baris terpisah
+            result_ws.cell(row=start_row + 6, column=3, value=nama_ayah)
+            result_ws.cell(row=start_row + 7, column=3, value=nama_ibu)
+
 
         return result_wb
 
