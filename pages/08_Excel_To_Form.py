@@ -48,11 +48,21 @@ def get_filled_workbook(data_df, form_wb):
             nik_val = row.get('NIK', '')
             nik = str(int(nik_val)) if pd.notna(nik_val) else ''
 
-            # Perbaikan untuk Tanggal Lahir
+            # Perbaikan untuk Tanggal Lahir (format DD MMMM YYYY)
             tgl_lahir_val = row.get('TANGGAL LAHIR', '')
             if pd.notna(tgl_lahir_val):
                 try:
-                    tgl_lahir = pd.to_datetime(tgl_lahir_val).strftime('%Y-%m-%d')
+                    # Menggunakan datetime untuk memformat tanggal
+                    tgl_lahir = pd.to_datetime(tgl_lahir_val).strftime('%d %B %Y')
+                    # Mengubah nama bulan dalam bahasa Indonesia
+                    bulan_dict = {
+                        'January': 'Januari', 'February': 'Februari', 'March': 'Maret',
+                        'April': 'April', 'May': 'Mei', 'June': 'Juni',
+                        'July': 'Juli', 'August': 'Agustus', 'September': 'September',
+                        'October': 'Oktober', 'November': 'November', 'December': 'Desember'
+                    }
+                    for en, id in bulan_dict.items():
+                        tgl_lahir = tgl_lahir.replace(en, id)
                 except:
                     tgl_lahir = str(tgl_lahir_val)
             else:
