@@ -3,118 +3,112 @@ import pandas as pd
 import openpyxl
 from io import BytesIO
 
-def create_excel_with_forms(data_file, form_file):
-    """
-    Menggabungkan data dari data_file ke dalam form dari form_file
-    dan menghasilkan satu file Excel.
-    """
-    try:
-        # Membaca data dari file CSV
-        data_df = pd.read_csv(data_file)
-        
-        # Membaca form template dari file Excel
-        # Gunakan openpyxl untuk membaca template
-        form_wb = openpyxl.load_workbook(form_file)
-        form_ws = form_wb.active
+st.set_page_config(page_title="Generator Form Excel Otomatis", layout="wide")
 
-        # Membuat workbook baru untuk hasil
+def get_filled_workbook(data_df, form_wb):
+    """Mengisi form template dengan data dari DataFrame."""
+    try:
+        form_ws = form_wb.active
         result_wb = openpyxl.Workbook()
         result_ws = result_wb.active
-
-        # Mendapatkan mapping dari header data ke sel di form
-        # Asumsi header data berada di baris pertama
-        # Tentukan sel mana yang akan diisi
-        
-        # --- Lakukan pemetaan data ke sel form ---
-        # Anda perlu menyesuaikan pemetaan ini sesuai dengan struktur form Anda
-        # Berdasarkan contoh form yang Anda berikan, pemetaannya adalah:
-        # Nama Bayi/Balita -> sel C2
-        # NIK -> sel C3
-        # Tanggal Lahir -> sel C4
-        # Jenis Kelamin -> sel C2 (ditambahkan)
-        # BB -> sel C5
-        # TB -> sel C6
-        # Nama Ayah/Ibu -> sel C7
         
         # Jarak antara setiap form di baris (misal 10 baris)
         form_height = 10 
 
         # Loop setiap baris data dan isi form
         for index, row in data_df.iterrows():
-            # Mengisi form baru di lembar hasil
             start_row = index * form_height + 1
             
-            # Salin isi form template
+            # Salin isi form template, termasuk pemformatan jika ada
             for r in range(1, form_ws.max_row + 1):
                 for c in range(1, form_ws.max_column + 1):
                     cell = form_ws.cell(row=r, column=c)
                     new_cell = result_ws.cell(row=start_row + r - 1, column=c)
-                    if cell.value is not None:
-                        new_cell.value = cell.value
+                    new_cell.value = cell.value
+                    if cell.has_hyperlink:
+                        new_cell.hyperlink = cell.hyperlink
+                    if cell.font:
+                        new_cell.font = openpyxl.copy(cell.font)
+                    if cell.fill:
+                        new_cell.fill = openpyxl.copy(cell.fill)
+                    if cell.border:
+                        new_cell.border = openpyxl.copy(cell.border)
+                    if cell.alignment:
+                        new_cell.alignment = openpyxl.copy(cell.alignment)
 
-            # Mengisi data ke sel yang sesuai
-            result_ws.cell(row=start_row + 1, column=3).value = str(row['Nama Bayi/Balita'])
-            result_ws.cell(row=start_row + 2, column=3).value = str(row['NIK'])
-            result_ws.cell(row=start_row + 3, column=3).value = str(row['TANGGAL LAHIR'])
-            result_ws.cell(row=start_row + 4, column=3).value = str(row['BB']) + ' Kg' if pd.notna(row['BB']) else ''
-            result_ws.cell(row=start_row + 5, column=3).value = str(row['TB']) + ' Cm' if pd.notna(row['TB']) else ''
-            result_ws.cell(row=start_row + 6, column=3).value = f"{row['AYAH']} / {row['IBU']}"
+            # Mengisi data ke sel yang sesuai berdasarkan pemetaan Anda sebelumnya
+            # Pemetaan: Nama Bayi/Balita (C2), NIK (C3), Tanggal Lahir (C4), BB (C5), TB (C6), Nama Ayah/Ibu (C7)
+            # Karena formnya memanjang, saya asumsikan sel-nya adalah C2, C3, dst.
             
-            # Mengisi Jenis Kelamin di sel C2
+            nama_bayi = str(row.get('Nama Bayi/Balita', ''))
+            nik = str(row.get('NIK', ''))
+            tgl_lahir = str(row.get('TANGGAL LAHIR', ''))
+            bb = str(row.get('BB', ''))
+            tb = str(row.get('TB', ''))
+            ayah_ibu = f"{row.get('AYAH', '')} / {row.get('IBU', '')}"
+            
+            # Mengisi jenis kelamin
             gender = ''
-            if pd.notna(row['L']) and row['L'] == 1:
+            if pd.notna(row.get('L')) and row.get('L') == 1:
                 gender = 'Laki-laki'
-            elif pd.notna(row['P']) and row['P'] == 1:
+            elif pd.notna(row.get('P')) and row.get('P') == 1:
                 gender = 'Perempuan'
-            
-            # Gabungkan Nama Bayi/Balita dan Jenis Kelamin
-            result_ws.cell(row=start_row + 1, column=3).value = f"{row['Nama Bayi/Balita']} ({gender})"
 
-        # Simpan workbook ke dalam buffer memori
-        buffer = BytesIO()
-        result_wb.save(buffer)
-        buffer.seek(0)
-        
-        return buffer
+            # Update nilai sel pada worksheet hasil
+            result_ws.cell(row=start_row + 1, column=3, value=nama_bayi)
+            result_ws.cell(row=start_row + 1, column=9, value=gender) # Kolom J
+            result_ws.cell(row=start_row + 2, column=3, value=nik)
+            result_ws.cell(row=start_row + 3, column=3, value=tgl_lahir)
+            result_ws.cell(row=start_row + 4, column=3, value=f"{bb} Kg" if bb else "")
+            result_ws.cell(row=start_row + 5, column=3, value=f"{tb} Cm" if tb else "")
+            result_ws.cell(row=start_row + 6, column=3, value=ayah_ibu)
+
+        return result_wb
 
     except Exception as e:
-        st.error(f"Terjadi kesalahan: {e}")
+        st.error(f"Terjadi kesalahan saat memproses data: {e}")
         return None
 
-# --- Antarmuka Streamlit ---
-
-st.title('Generator Form Excel Otomatis')
-st.markdown("Unggah file data dan template form Anda. Program akan mengisi form secara otomatis.")
+# --- UI Streamlit ---
+st.title('Generator Form Bayi/Balita')
+st.markdown("Unggah file data dan template form Excel, lalu unduh file yang sudah terisi.")
 
 # Unggah file data
-uploaded_data_file = st.file_uploader("Unggah File Data (CSV/Excel)", type=['csv', 'xlsx'])
+data_file_upload = st.file_uploader("1. Unggah File Data (.csv atau .xlsx)", type=['csv', 'xlsx'])
 
 # Unggah file form
-uploaded_form_file = st.file_uploader("Unggah File Template Form (Excel)", type=['xlsx'])
+form_file_upload = st.file_uploader("2. Unggah File Template Form (.xlsx)", type=['xlsx'])
 
-if uploaded_data_file and uploaded_form_file:
-    if st.button('Generate Excel File'):
-        with st.spinner('Sedang memproses...'):
+if data_file_upload and form_file_upload:
+    if st.button('3. Generate dan Unduh File Excel'):
+        with st.spinner('Memproses, mohon tunggu...'):
             try:
-                # Menggunakan Pandas untuk membaca file data
-                if uploaded_data_file.name.endswith('.csv'):
-                    data_df = pd.read_csv(uploaded_data_file)
+                # Baca data
+                if data_file_upload.name.endswith('.csv'):
+                    data_df = pd.read_csv(data_file_upload)
                 else:
-                    data_df = pd.read_excel(uploaded_data_file)
+                    data_df = pd.read_excel(data_file_upload)
                 
-                # Mengisi form
-                excel_buffer = create_excel_with_forms(uploaded_data_file, uploaded_form_file)
+                # Baca template form
+                form_wb = openpyxl.load_workbook(form_file_upload)
                 
-                if excel_buffer:
+                # Buat workbook yang sudah terisi
+                filled_wb = get_filled_workbook(data_df, form_wb)
+
+                if filled_wb:
+                    # Simpan workbook ke buffer
+                    output = BytesIO()
+                    filled_wb.save(output)
+                    output.seek(0)
+                    
                     st.success("File Excel berhasil dibuat!")
                     
-                    # Tombol unduh
+                    # Tampilkan tombol unduh
                     st.download_button(
-                        label="Unduh File Excel",
-                        data=excel_buffer,
+                        label="Klik untuk Unduh",
+                        data=output,
                         file_name="Kartu_Bayi_Balita_Terisi.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
             except Exception as e:
-                st.error(f"Terjadi kesalahan saat memproses file: {e}")
-                st.info("Pastikan file data dan form memiliki format yang benar dan sesuai.")
+                st.error(f"Gagal memproses file. Pastikan format file data dan template sudah benar. Detail error: {e}")
