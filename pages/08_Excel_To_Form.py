@@ -53,17 +53,14 @@ def get_filled_workbook(data_df, form_wb):
             nik_val = row.get('NIK', '')
             nik = str(int(nik_val)) if pd.notna(nik_val) else '-'
 
-            # Perbaikan untuk Tanggal Lahir (format DD MMMM YYYY)
+            # Perbaikan untuk Tanggal Lahir
             tgl_lahir_val = row.get('TANGGAL LAHIR', '')
             tgl_lahir = '-'
             if pd.notna(tgl_lahir_val):
                 try:
                     # Menggunakan datetime untuk memformat tanggal
                     tgl_lahir_dt = pd.to_datetime(tgl_lahir_val)
-                    # Mengatur bahasa lokal untuk nama bulan
-                    import locale
-                    locale.setlocale(locale.LC_TIME, 'id_ID.UTF-8')
-                    tgl_lahir = tgl_lahir_dt.strftime('%d %B %Y')
+                    tgl_lahir = tgl_lahir_dt.strftime('%d-%m-%Y')
                 except:
                     tgl_lahir = str(tgl_lahir_val)
 
