@@ -43,7 +43,10 @@ def get_filled_workbook(data_df, form_wb):
 
             # Mengisi data ke sel yang sesuai berdasarkan posisi yang diindikasikan
             nama_bayi = str(row.get('Nama Bayi/Balita', ''))
-            nik = str(row.get('NIK', ''))
+            
+            # Perbaikan untuk NIK
+            nik = str(row.get('NIK', '')) if pd.isna(row.get('NIK')) else str(int(row.get('NIK')))
+
             tgl_lahir = str(row.get('TANGGAL LAHIR', ''))
             bb = str(row.get('BB', ''))
             tb = str(row.get('TB', ''))
