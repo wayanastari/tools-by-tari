@@ -18,6 +18,17 @@ def get_filled_workbook(data_df, form_wb):
         result_wb = openpyxl.Workbook()
         result_ws = result_wb.active
 
+        # Mendapatkan nama kolom yang tepat dari DataFrame
+        def find_column_name(df, possible_names):
+            for name in possible_names:
+                if name in df.columns:
+                    return name
+            return None
+
+        col_alamat = find_column_name(data_df, ['Alamat', 'ALAMAT', 'alamat'])
+        col_no_hp = find_column_name(data_df, ['No. Hp', 'NO. HP', 'no. hp', 'No.hp'])
+
+
         # Loop setiap baris data dan isi form
         for index, row in data_df.iterrows():
             # Tentukan baris awal untuk form baru
@@ -38,9 +49,9 @@ def get_filled_workbook(data_df, form_wb):
             tb = str(row.get('TB', ''))
             nama_ayah = str(row.get('AYAH', ''))
             nama_ibu = str(row.get('IBU', ''))
-            alamat = str(row.get('Alamat', ''))
-            no_hp = str(row.get('No. Hp', ''))
-
+            alamat = str(row.get(col_alamat, '')) if col_alamat else ""
+            no_hp = str(row.get(col_no_hp, '')) if col_no_hp else ""
+            
             # Mengisi jenis kelamin dan menghapus yang tidak relevan
             gender_text = '(Perempuan)' if pd.notna(row.get('P')) and row.get('P') == 1 else '(Laki-laki)'
             result_ws.cell(row=start_row + 1, column=11).value = gender_text
