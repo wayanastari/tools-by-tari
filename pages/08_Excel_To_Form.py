@@ -45,9 +45,19 @@ def get_filled_workbook(data_df, form_wb):
             nama_bayi = str(row.get('Nama Bayi/Balita', ''))
             
             # Perbaikan untuk NIK
-            nik = str(row.get('NIK', '')) if pd.isna(row.get('NIK')) else str(int(row.get('NIK')))
+            nik_val = row.get('NIK', '')
+            nik = str(int(nik_val)) if pd.notna(nik_val) else ''
 
-            tgl_lahir = str(row.get('TANGGAL LAHIR', ''))
+            # Perbaikan untuk Tanggal Lahir
+            tgl_lahir_val = row.get('TANGGAL LAHIR', '')
+            if pd.notna(tgl_lahir_val):
+                try:
+                    tgl_lahir = pd.to_datetime(tgl_lahir_val).strftime('%Y-%m-%d')
+                except:
+                    tgl_lahir = str(tgl_lahir_val)
+            else:
+                tgl_lahir = ''
+
             bb = str(row.get('BB', ''))
             tb = str(row.get('TB', ''))
             nama_ayah = str(row.get('AYAH', ''))
