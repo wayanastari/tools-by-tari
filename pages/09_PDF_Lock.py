@@ -21,21 +21,17 @@ if uploaded_file:
     st.write("- ❌ Comment / Annotation")
 
     if owner_pass and st.button("🔒 Buat PDF Strong Lock (AES-256)"):
-        # Simpan PDF ke buffer
+        # Read file
         input_pdf = BytesIO(uploaded_file.read())
-
-        # Load PDF
         pdf = Pdf.open(input_pdf)
 
-        # Strong encryption
+        # AES-256 strong encryption (pikepdf will auto apply)
         encryption = Encryption(
             owner=owner_pass,
-            user="",                      # user password kosong → bisa dibuka biasa
-            R=6,                          # AES-256 encryption
-            allow=None                    # tidak ada permission sama sekali
+            user="",          # kosong → user buka tanpa password
+            allow=[]          # tidak ada izin sama sekali
         )
 
-        # Output buffer
         output = BytesIO()
         pdf.save(output, encryption=encryption)
         output.seek(0)
