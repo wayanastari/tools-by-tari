@@ -1,5 +1,5 @@
 import streamlit as st
-from pikepdf import Pdf, Encryption, Permissions
+from pikepdf import Pdf, Encryption, Permissions, Permission
 from io import BytesIO
 
 st.title("🔐 Strong PDF Encryption (AES-256)")
@@ -17,29 +17,21 @@ if uploaded_file:
         # 1. Baca PDF asli
         original = Pdf.open(BytesIO(uploaded_file.read()))
 
-        # 2. Buat PDF baru (fix untuk beberapa PDF yang tidak bisa langsung save)
+        # 2. Buat PDF baru (mencegah error incremental/signed)
         new_pdf = Pdf.new()
 
-        # 3. Copy halaman satu per satu
+        # 3. Copy semua halaman
         for page in original.pages:
             new_pdf.pages.append(page)
 
-        # 4. Permission object — MATI SEMUA
-        perm = Permissions(
-            print=False,
-            modify=False,
-            copy=False,
-            annotate=False,
-            form=False,
-            accessibility=False,
-            assemble=False
-        )
+        # 4. BLOCK ALL PERMISSIONS
+        perm = Permissions(Permission.NONE)
 
         # 5. AES-256 strong encryption
         encryption = Encryption(
             owner=owner_pass,
-            user="",      # user buka tanpa password
-            allow=perm    # ALL DISABLED
+            user="",        # user bebas buka tanpa password
+            allow=perm      # no permissions at all
         )
 
         # 6. Output
