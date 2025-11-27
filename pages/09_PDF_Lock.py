@@ -1,5 +1,5 @@
 import streamlit as st
-from pikepdf import Pdf, Encryption, Permissions, Permission
+from pikepdf import Pdf, Encryption
 from io import BytesIO
 
 st.title("🔐 Strong PDF Encryption (AES-256)")
@@ -14,31 +14,30 @@ if uploaded_file:
 
     if owner_pass and st.button("🔒 Buat PDF Strong Lock (AES-256)"):
 
-        # 1. Baca PDF asli
+        # 1. Buka PDF asli
         original = Pdf.open(BytesIO(uploaded_file.read()))
 
-        # 2. Buat PDF baru (mencegah error incremental/signed)
+        # 2. Buat PDF baru (hindari error incremental & signed)
         new_pdf = Pdf.new()
 
-        # 3. Copy semua halaman
+        # 3. Copy seluruh halaman
         for page in original.pages:
             new_pdf.pages.append(page)
 
-        # 4. BLOCK ALL PERMISSIONS
-        perm = Permissions(Permission.NONE)
-
-        # 5. AES-256 strong encryption
+        # 4. AES-256 encryption (R=6) + block all permissions
         encryption = Encryption(
             owner=owner_pass,
-            user="",        # user bebas buka tanpa password
-            allow=perm      # no permissions at all
+            user="",           # user buka tanpa password
+            R=6,               # AES-256
+            allow=()           # tidak ada permission diizinkan
         )
 
-        # 6. Output
+        # 5. Save hasil
         output = BytesIO()
         new_pdf.save(output, encryption=encryption)
         output.seek(0)
 
+        # 6. Download UI
         st.download_button(
             label="⬇️ Download PDF Terkunci (AES-256)",
             data=output,
