@@ -2,3 +2,5 @@ pandas
 openpyxl
 streamlit
 pikepdf
+qrcode[pil]
+Pillow
