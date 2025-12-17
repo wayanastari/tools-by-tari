@@ -4,3 +4,4 @@ streamlit
 pikepdf
 qrcode[pil]
 Pillow
+python-pptx
