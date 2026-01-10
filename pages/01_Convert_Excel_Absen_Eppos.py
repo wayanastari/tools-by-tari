@@ -340,7 +340,7 @@ def process_attendance_log(uploaded_file):
         SHIFT_SIANG_PULANG_END = time(23, 59, 59) 
 
         # Jendela Waktu Istirahat
-        ISTIRAHAT_SIANG_START = time(11, 30, 0)
+        ISTIRAHAT_SIANG_START = time(10, 00, 0)
         ISTIRAHAT_SIANG_END = time(14, 30, 0)
 
         ISTIRAHAT_MALAM_START = time(16, 30, 0) 
