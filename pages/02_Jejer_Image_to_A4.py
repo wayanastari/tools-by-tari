@@ -169,7 +169,8 @@ if uploaded_files:
     for idx, file in enumerate(uploaded_files):
         filename_preview = os.path.splitext(file.name)[0]
         with cols[idx % 3]:
-            st.image(file, caption=f"Urutan {idx+1}: {filename_preview}", use_container_width=True)
+            # Kode yang benar untuk versi Streamlit lama
+            st.image(file, caption=f"Urutan {idx+1}: {filename_preview}", use_column_width=True)
 
     if st.button("Proses dan Buat PDF"):
         with st.spinner("Sedang menyusun gambar..."):
