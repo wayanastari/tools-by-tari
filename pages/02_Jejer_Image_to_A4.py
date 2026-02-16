@@ -14,7 +14,9 @@ def wrap_text(text, font, max_width):
     
     for word in words:
         test_line = ' '.join(current_line + [word])
-        bbox = ImageDraw.Draw(Image.new('RGB', (1,1))).textbbox((0,0), test_line, font=font)
+        # Gunakan dummy image untuk kalkulasi bbox
+        draw = ImageDraw.Draw(Image.new('RGB', (1,1)))
+        bbox = draw.textbbox((0,0), test_line, font=font)
         test_width = bbox[2] - bbox[0]
         
         if test_width <= max_width:
@@ -24,68 +26,60 @@ def wrap_text(text, font, max_width):
                 lines.append(' '.join(current_line))
             current_line = [word]
             
-            test_line_single_word_bbox = ImageDraw.Draw(Image.new('RGB', (1,1))).textbbox((0,0), word, font=font)
-            if (test_line_single_word_bbox[2] - test_line_single_word_bbox[0]) > max_width:
-                pass 
-
     if current_line:
         lines.append(' '.join(current_line))
     
     return lines
-
 
 def create_a4_grid_pdf(uploaded_files_data):
     if not uploaded_files_data:
         st.error("Mohon unggah gambar.")
         return None
 
-    # A4 dimensions in pixels (at 300 DPI)
+    # A4 dimensions (300 DPI)
     a4_width_px = int(8.27 * 300)
     a4_height_px = int(11.69 * 300)
 
-    margin = 50 
-    padding = 20 
-    border_width = 3 
-    border_color = (0, 0, 0) 
+    margin = 60 
+    padding = 40 
+    border_width = 2 
+    border_color = (180, 180, 180) # Abu-abu tipis agar elegan
     text_color = (0, 0, 0)  
 
+    # --- PENYESUAIAN UKURAN FONT ---
+    # Ukuran ditingkatkan ke 45-50 agar terbaca jelas di kertas A4
+    font_size = 45 
     try:
-        font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-        if not os.path.exists(font_path):
-            font_path = "arialbd.ttf" 
-            if not os.path.exists(font_path): 
-                font_size = 25 
-                font = ImageFont.load_default()
-                text_color = (100, 100, 100) 
-            else:
-                font_size = 35 
-                font = ImageFont.truetype(font_path, font_size)
-        else:
-            font_size = 35 
-            font = ImageFont.truetype(font_path, font_size)
-    except IOError:
-        font_size = 25
+        # Mencoba mencari font tebal agar lebih terbaca
+        paths = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "arialbd.ttf", 
+            "Arial.ttf",
+            "/Library/Fonts/Arial.ttf", # Mac
+            "C:\\Windows\\Fonts\\arial.ttf" # Windows
+        ]
+        font = None
+        for path in paths:
+            if os.path.exists(path):
+                font = ImageFont.truetype(path, font_size)
+                break
+        if font is None:
+            font = ImageFont.load_default()
+    except:
         font = ImageFont.load_default()
-        text_color = (100, 100, 100)
 
     max_image_width_per_col = (a4_width_px - (2 * margin) - (2 * padding)) // 3
     max_image_height_per_row_area = (a4_height_px - (2 * margin) - (1 * padding)) // 2
-    target_aspect_ratio_width_to_height = 9 / 16.0 
+    target_aspect_ratio = 9 / 16.0 
 
-    img_max_width = max_image_width_per_col - (2 * border_width) 
-    img_max_height = int(img_max_width / target_aspect_ratio_width_to_height)
+    img_max_width = max_image_width_per_col - (2 * border_width)
+    
+    # Estimasi tinggi teks (Line height + spacing)
+    text_line_height_estimate = font_size + 15
+    estimated_total_text_height = (2 * text_line_height_estimate) + 20
 
-    approx_text_lines = 2 
-    text_line_height_estimate = font_size + 5 
-    estimated_total_text_height = approx_text_lines * text_line_height_estimate + 5 
-
-    if (img_max_height + (2 * border_width) + estimated_total_text_height) > max_image_height_per_row_area:
-        img_max_height = max_image_height_per_row_area - (2 * border_width) - estimated_total_text_height
-        img_max_width = int(img_max_height * target_aspect_ratio_width_to_height)
-        
-        if img_max_width < 50:
-            img_max_width = 50
-            img_max_height = int(img_max_width / target_aspect_ratio_width_to_height)
+    img_max_height = max_image_height_per_row_area - (2 * border_width) - estimated_total_text_height
+    img_max_width = int(img_max_height * target_aspect_ratio)
 
     actual_drawn_slot_width = img_max_width + (2 * border_width)
     actual_drawn_slot_height_base = img_max_height + (2 * border_width) + estimated_total_text_height 
@@ -99,21 +93,14 @@ def create_a4_grid_pdf(uploaded_files_data):
         
         processed_items_for_page = []
         for uploaded_file_obj in current_batch_files:
-            img = Image.open(uploaded_file_obj)
+            img = Image.open(uploaded_file_obj).convert("RGB")
             base_filename = os.path.basename(uploaded_file_obj.name)
             filename_without_ext = os.path.splitext(base_filename)[0]
 
             if img.width > img.height:
                 img = img.rotate(90, expand=True)
 
-            if img.width / img.height > img_max_width / img_max_height:
-                new_width = img_max_width
-                new_height = int(img.height * (img_max_width / img.width))
-            else:
-                new_height = img_max_height
-                new_width = int(img.width * (img_max_height / img.height))
-
-            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            img.thumbnail((img_max_width, img_max_height), Image.Resampling.LANCZOS)
             processed_items_for_page.append((img, filename_without_ext))
 
         for i in range(2): 
@@ -125,31 +112,28 @@ def create_a4_grid_pdf(uploaded_files_data):
                     grid_cell_x_start = margin + j * (actual_drawn_slot_width + padding)
                     grid_cell_y_start = margin + i * (actual_drawn_slot_height_base + padding)
 
-                    grid_cell_x_start = max(margin, min(grid_cell_x_start, a4_width_px - margin - actual_drawn_slot_width))
-                    grid_cell_y_start = max(margin, min(grid_cell_y_start, a4_height_px - margin - actual_drawn_slot_height_base))
-
                     img_x = grid_cell_x_start + (actual_drawn_slot_width - current_img.width) // 2
                     img_y = grid_cell_y_start + border_width 
 
                     a4_canvas.paste(current_img, (img_x, img_y))
                     
-                    max_text_width = actual_drawn_slot_width - (2 * border_width) - 10 
+                    max_text_width = actual_drawn_slot_width - 10 
                     wrapped_lines = wrap_text(filename, font, max_text_width)
                     
-                    current_text_y = img_y + current_img.height + 5 
+                    current_text_y = img_y + current_img.height + 15 
                     
-                    for line in wrapped_lines:
+                    for line in wrapped_lines[:2]: # Batasi 2 baris agar tidak tumpang tindih
                         bbox = draw.textbbox((0,0), line, font=font)
                         text_width = bbox[2] - bbox[0]
-                        text_height_per_line = bbox[3] - bbox[1]
                         text_x = grid_cell_x_start + (actual_drawn_slot_width - text_width) // 2
                         draw.text((text_x, current_text_y), line, fill=text_color, font=font)
-                        current_text_y += text_height_per_line + 5 
+                        current_text_y += (bbox[3] - bbox[1]) + 10
 
+                    # Gambar border kotak
                     draw.rectangle(
                         (grid_cell_x_start, grid_cell_y_start, 
                          grid_cell_x_start + actual_drawn_slot_width, 
-                         current_text_y + border_width), 
+                         grid_cell_y_start + actual_drawn_slot_height_base), 
                         outline=border_color, width=border_width
                     )
 
@@ -158,16 +142,16 @@ def create_a4_grid_pdf(uploaded_files_data):
     pdf_buffer = io.BytesIO()
     if all_pdf_pages:
         first_page = all_pdf_pages[0]
-        remaining_pages = all_pdf_pages[1:] if len(all_pdf_pages) > 1 else []
+        remaining_pages = all_pdf_pages[1:]
         first_page.save(pdf_buffer, format="PDF", save_all=True, append_images=remaining_pages)
         
     return pdf_buffer.getvalue()
 
 # --- Streamlit UI ---
-st.set_page_config(layout="centered", page_title="Jejer Bukti Transfer ke A4")
+st.set_page_config(layout="centered", page_title="Bukti Transfer ke A4")
 
-st.title("Jejer Gambar ke Lembar A4 (3x2 Portrait)")
-st.write("Unggah gambar, maka sistem akan mengurutkannya berdasarkan **nama file** secara alfabetis.")
+st.title("Jejer Gambar ke A4 (3x2)")
+st.write("Urutan gambar akan sesuai dengan **urutan saat kamu memilih/mengunggah file**.")
 
 uploaded_files = st.file_uploader(
     "Pilih gambar (JPG, PNG)",
@@ -176,29 +160,30 @@ uploaded_files = st.file_uploader(
 )
 
 if uploaded_files:
-    # --- PROSES SORTING BERDASARKAN NAMA FILENAME ---
-    uploaded_files.sort(key=lambda x: x.name)
+    # --- LOGIKA URUTAN: Kita hapus .sort() agar sesuai urutan upload ---
+    # Jika ingin benar-benar yakin sesuai urutan klik, user harus pilih satu per satu 
+    # atau mengandalkan urutan selection dari file explorer mereka.
 
-    st.subheader("Pratinjau (Sudah Terurut Nama):")
+    st.subheader("Pratinjau Urutan Cetak:")
     cols = st.columns(3)
     for idx, file in enumerate(uploaded_files):
-        filename_without_ext_preview = os.path.splitext(file.name)[0]
+        filename_preview = os.path.splitext(file.name)[0]
         with cols[idx % 3]:
-            st.image(file, caption=f"{idx+1}. {filename_without_ext_preview}", width=150)
+            st.image(file, caption=f"Urutan {idx+1}: {filename_preview}", use_container_width=True)
 
     if st.button("Proses dan Buat PDF"):
-        with st.spinner("Memproses gambar..."):
+        with st.spinner("Sedang menyusun gambar..."):
             pdf_data = create_a4_grid_pdf(uploaded_files)
             if pdf_data:
-                st.success("PDF berhasil dibuat!")
+                st.success("PDF siap diunduh!")
                 st.download_button(
-                    label="Unduh PDF A4",
+                    label="📥 Unduh PDF Sekarang",
                     data=pdf_data,
-                    file_name="bukti_transfer_sorted.pdf",
+                    file_name="bukti_transfer_urut_upload.pdf",
                     mime="application/pdf"
                 )
 else:
-    st.info("Unggah gambar Kamu untuk memulai!")
+    st.info("💡 Tips: Pilih file secara berurutan saat mengunggah agar hasilnya pas!")
 
 st.markdown("---")
 st.write("❤ Dibuat oleh Tari ❤")
