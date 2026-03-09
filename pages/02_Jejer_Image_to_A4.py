@@ -58,20 +58,22 @@ def create_a4_grid_pdf(uploaded_files_data):
     text_color = (0, 0, 0)   # Black text
 
     # Attempt to load a bold font
+    # --- PERBAIKAN LOADING FONT ---
+    font_name = "Poppins-Bold.ttf"
     try:
-        # Mengambil path file Poppins-Bold.ttf yang ada di folder yang sama dengan script
-        font_name = "Poppins-Bold.ttf"
-        font_path = os.path.join(os.path.dirname(__file__), font_name)
-        
-        if os.path.exists(font_path):
-            # Gunakan ukuran 45 atau 50 agar jelas di kertas A4 300 DPI
+        # Cek langsung di root folder
+        if os.path.exists(font_name):
             font_size = 50 
-            font = ImageFont.truetype(font_path, font_size)
+            font = ImageFont.truetype(font_name, font_size)
         else:
-            # Jika file tidak terbaca, gunakan default (sebagai cadangan terakhir)
-            st.warning(f"File {font_name} tidak ditemukan di repo. Menggunakan font default.")
-            font = ImageFont.load_default()
-            font_size = 25
+            # Fallback jika os.path.exists gagal mendeteksi
+            try:
+                font_size = 50
+                font = ImageFont.truetype(font_name, font_size)
+            except:
+                st.warning(f"File {font_name} tidak terdeteksi. Menggunakan font default.")
+                font = ImageFont.load_default()
+                font_size = 25
     except Exception as e:
         st.error(f"Gagal memuat font: {e}")
         font = ImageFont.load_default()
