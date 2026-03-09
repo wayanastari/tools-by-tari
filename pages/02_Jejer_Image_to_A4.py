@@ -59,25 +59,23 @@ def create_a4_grid_pdf(uploaded_files_data):
 
     # Attempt to load a bold font
     try:
-        font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-        if not os.path.exists(font_path):
-            font_path = "arialbd.ttf" # Common Arial Bold on Windows
-            if not os.path.exists(font_path): # Fallback if specific paths fail
-                st.warning("Font bold ('DejaVuSans-Bold.ttf' or 'arialbd.ttf') tidak ditemukan. Menggunakan font default Pillow.")
-                font_size = 25 # Slightly smaller font for 3 columns
-                font = ImageFont.load_default()
-                text_color = (100, 100, 100) # Slightly lighter grey for default font
-            else:
-                font_size = 35 # Adjusted font size for 3 columns
-                font = ImageFont.truetype(font_path, font_size)
-        else:
-            font_size = 35 # Adjusted font size for 3 columns
+        # Mengambil path file Poppins-Bold.ttf yang ada di folder yang sama dengan script
+        font_name = "Poppins-Bold.ttf"
+        font_path = os.path.join(os.path.dirname(__file__), font_name)
+        
+        if os.path.exists(font_path):
+            # Gunakan ukuran 45 atau 50 agar jelas di kertas A4 300 DPI
+            font_size = 50 
             font = ImageFont.truetype(font_path, font_size)
-    except IOError:
-        st.warning("Terjadi masalah saat memuat font. Menggunakan font default Pillow.")
-        font_size = 25
+        else:
+            # Jika file tidak terbaca, gunakan default (sebagai cadangan terakhir)
+            st.warning(f"File {font_name} tidak ditemukan di repo. Menggunakan font default.")
+            font = ImageFont.load_default()
+            font_size = 25
+    except Exception as e:
+        st.error(f"Gagal memuat font: {e}")
         font = ImageFont.load_default()
-        text_color = (100, 100, 100) # Slightly lighter grey for default font
+        font_size = 25
 
     # Calculation for 3 Columns x 2 Rows with TALL Rectangular Slots on PORTRAIT A4
     # Max width for an image in one of the 3 columns
@@ -243,8 +241,8 @@ Setelah diproses, Kamu bisa mengunduh hasilnya dalam format PDF multi-halaman.
 """)
 
 uploaded_files = st.file_uploader(
-    "Pilih gambar (JPG, PNG)",
-    type=["jpg", "jpeg", "png"],
+    "Pilih gambar (JPG, PNG, JPEG, JFIF)",
+    type=["jpg", "jpeg", "png", "jfif"],
     accept_multiple_files=True
 )
 
