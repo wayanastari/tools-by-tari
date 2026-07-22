@@ -6,71 +6,84 @@ import io
 import re
 from datetime import datetime
 
-# Menggunakan PyMuPDF (fitz) untuk menambahkan highlight warna langsung ke PDF
+# Menggunakan PyMuPDF (fitz) untuk mewarnai / highlight teks langsung di file PDF
 try:
     import fitz
 except ImportError:
-    st.error("Silakan install PyMuPDF terlebih dahulu dengan perintah: pip install pymupdf")
+    st.error("⚠️ Silakan install PyMuPDF di environment Anda: pip install pymupdf")
 
-st.set_page_config(page_title="Cetakita PDF Reconciler", page_icon="📄", layout="wide")
-
-# ==========================================
-# 1. NAVIGATION SUBMENU
-# ==========================================
-st.sidebar.title("📌 Menu Utama")
-main_menu = st.sidebar.radio("Pilih Modul:", ["Finance & Accounting"])
-
-if main_menu == "Finance & Accounting":
-    submenu = st.sidebar.selectbox("Submenu:", ["Rekonsiliasi Bank", "Laporan Ringkasan"])
+st.set_page_config(page_title="Rekonsiliasi Bank - Cetakita", page_icon="📄", layout="wide")
 
 # ==========================================
-# HELPER: BUKA & ANNOTATE PDF
+# 1. HELPER & ERROR-PROOF PDF OPENER
 # ==========================================
-def highlight_pdf_text(file_bytes, highlight_rules, password=None):
+def safe_open_pdf(file_uploader, password=None):
     """
-    Menambahkan highlight warna pada PDF berdasarkan keyword/teks tertentu.
-    highlight_rules: dict, contoh {'ON202605001': (1, 0.98, 0.77), ...} -> RGB 0-1
+    Fungsi aman untuk membuka PDF dari BytesIOStream.
+    Mencegah error 'PdfminerException' / EOF Error dengan mengelola .seek(0).
     """
-    doc = fitz.open(stream=file_bytes, filetype="pdf")
-    if doc.is_encrypted and password:
-        doc.authenticate(password)
-        
-    for page in doc:
-        for text_pattern, color in highlight_rules.items():
-            if not text_pattern or len(text_pattern) < 3:
-                continue
-            text_instances = page.search_for(text_pattern)
-            for inst in text_instances:
-                highlight = page.add_highlight_annot(inst)
-                highlight.set_colors(stroke=color) # RGB Tuple
-                highlight.update()
-                
-    output_stream = io.BytesIO()
-    doc.save(output_stream)
-    doc.close()
-    output_stream.seek(0)
-    return output_stream.getvalue()
-
-def load_pdf_plumber(file_bytes, password=None):
+    if file_uploader is None:
+        return None
     try:
+        file_uploader.seek(0)
+        file_bytes = file_uploader.read()
+        file_uploader.seek(0) # Reset pointer kembali ke awal
+        
+        # Buka via pypdf untuk me-resolve password/enkripsi e-Statement
         reader = pypdf.PdfReader(io.BytesIO(file_bytes))
         if reader.is_encrypted:
             if password:
-                reader.decrypt(password)
+                decrypted = reader.decrypt(password)
+                if decrypted == 0:
+                    st.error(f"❌ Password PDF untuk {file_uploader.name} salah!")
+                    return None
             else:
+                st.warning(f"🔒 File {file_uploader.name} terproteksi password. Silakan masukkan password.")
                 return None
+
         out_stream = io.BytesIO()
         writer = pypdf.PdfWriter()
         for page in reader.pages:
             writer.add_page(page)
         writer.write(out_stream)
         out_stream.seek(0)
+        
         return pdfplumber.open(out_stream)
     except Exception as e:
+        st.error(f"❌ Gagal memproses file {file_uploader.name}: {e}")
         return None
 
+def highlight_pdf_text(file_bytes, highlight_rules, password=None):
+    """
+    Menambahkan penanda stabilo (highlight) ke dalam file PDF asli.
+    highlight_rules = {'TEXT_KEYWORD': (R, G, B)} -> Nilai RGB dalam rentang 0.0 s/d 1.0
+    """
+    try:
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        if doc.is_encrypted and password:
+            doc.authenticate(password)
+            
+        for page in doc:
+            for text_pattern, color in highlight_rules.items():
+                if not text_pattern or len(str(text_pattern)) < 3:
+                    continue
+                text_instances = page.search_for(str(text_pattern))
+                for inst in text_instances:
+                    highlight = page.add_highlight_annot(inst)
+                    highlight.set_colors(stroke=color)
+                    highlight.update()
+                    
+        output_stream = io.BytesIO()
+        doc.save(output_stream)
+        doc.close()
+        output_stream.seek(0)
+        return output_stream.getvalue()
+    except Exception as e:
+        st.warning(f"Gagal mewarnai sebagian isi PDF: {e}")
+        return file_bytes
+
 # ==========================================
-# PARSER LAPORAN PENDAPATAN & MUTASI
+# 2. PARSERS (LAPORAN PENDAPATAN & MUTASI)
 # ==========================================
 def parse_laporan_pendapatan(pdf_bytes):
     records = []
@@ -138,137 +151,208 @@ def parse_mutasi_generic(pdf_obj, bank_name):
     pdf_obj.close()
     return pd.DataFrame(records)
 
-# RGB COLOR MAPS (0.0 - 1.0)
+# WARNA RGB HIGHLIGHT (Range 0.0 - 1.0)
 COLOR_BCA = (1.0, 0.98, 0.5)      # Kuning Muda
 COLOR_BNI = (0.6, 0.9, 0.6)       # Hijau Muda
 COLOR_MANDIRI = (0.7, 0.88, 1.0)  # Biru Muda
 COLOR_PINK = (1.0, 0.7, 0.75)     # Pink / Merah Muda
 
 # ==========================================
-# 2. SUBMENU: REKONSILIASI BANK
+# 3. MAIN UI LAYOUT (MAIN AREA)
 # ==========================================
-if main_menu == "Finance & Accounting" and submenu == "Rekonsiliasi Bank":
-    st.title("📄 Rekonsiliasi & Auto-Highlight File PDF")
-    st.caption("Upload file PDF pendapatan dan mutasi bank. Hasil PDF yang telah di-highlight warna per transaksi dapat langsung diunduh.")
+st.title("📄 Rekonsiliasi Otomatis Pendapatan vs Mutasi Bank")
+st.caption("Cetakita.com - Financial Reconciliation System")
 
-    # AREA UPLOAD DI HALAMAN UTAMA
-    with st.expander("📂 **Area Upload PDF (Klik untuk Membuka/Menutup)**", expanded=True):
-        col_up1, col_up2 = st.columns(2)
+# AREA UPLOAD FILE DIPINDAH TOTAL KE MAIN AREA (BUKAN SIDEBAR)
+st.markdown("### 📂 Upload Dokumen PDF")
+with st.expander("Klik di sini untuk Unggah Laporan Pendapatan & Rekening Koran Bank", expanded=True):
+    col_up1, col_up2 = st.columns(2)
+    
+    with col_up1:
+        st.subheader("1. Laporan Pendapatan System")
+        file_pendapatan = st.file_uploader("Upload Pendapatan Cetakita (PDF)", type=["pdf"], key="main_pendapatan")
         
-        with col_up1:
-            st.subheader("1. Laporan Pendapatan System")
-            file_pendapatan = st.file_uploader("Upload Pendapatan Cetakita (PDF)", type=["pdf"], key="pendapatan")
-            
-            st.subheader("2. Mutasi Bank BCA")
-            file_bca = st.file_uploader("Upload Mutasi BCA (PDF)", type=["pdf"], key="bca")
+        st.subheader("2. Mutasi Bank BCA")
+        file_bca = st.file_uploader("Upload Mutasi BCA (PDF)", type=["pdf"], key="main_bca")
 
-        with col_up2:
-            st.subheader("3. Mutasi Bank BNI")
-            file_bni = st.file_uploader("Upload Mutasi BNI (PDF)", type=["pdf"], key="bni")
-            pass_bni = st.text_input("Password PDF BNI (jika ada)", type="password") if file_bni else None
+    with col_up2:
+        st.subheader("3. Mutasi Bank BNI")
+        file_bni = st.file_uploader("Upload Mutasi BNI (PDF)", type=["pdf"], key="main_bni")
+        pass_bni = st.text_input("Password PDF BNI (jika ada)", type="password", key="pass_bni") if file_bni else None
 
-            st.subheader("4. Mutasi Bank Mandiri")
-            file_mandiri = st.file_uploader("Upload Mutasi Mandiri (PDF)", type=["pdf"], key="mandiri")
-            pass_mandiri = st.text_input("Password PDF Mandiri (jika ada)", type="password") if file_mandiri else None
+        st.subheader("4. Mutasi Bank Mandiri")
+        file_mandiri = st.file_uploader("Upload Mutasi Mandiri (PDF)", type=["pdf"], key="main_mandiri")
+        pass_mandiri = st.text_input("Password PDF Mandiri (jika ada)", type="password", key="pass_mandiri") if file_mandiri else None
 
-    # PROSES REKONSILIASI & PENANDAAN HIGHLIGHT PDF
-    if file_pendapatan and (file_bca or file_bni or file_mandiri):
-        bytes_pendapatan = file_pendapatan.read()
-        df_sys = parse_laporan_pendapatan(bytes_pendapatan)
-        
-        dict_bank_bytes = {}
-        list_df_bank = []
-        
-        if file_bca:
-            bca_bytes = file_bca.read()
-            dict_bank_bytes['BCA'] = {'bytes': bca_bytes, 'pass': None}
-            pdf_bca = load_pdf_plumber(bca_bytes)
+# ==========================================
+# 4. EKSEKUSI REKONSILIASI & PENANDAAN PDF
+# ==========================================
+if file_pendapatan and (file_bca or file_bni or file_mandiri):
+    
+    # Baca bytes laporan pendapatan
+    file_pendapatan.seek(0)
+    bytes_pendapatan = file_pendapatan.read()
+    file_pendapatan.seek(0)
+    
+    df_sys = parse_laporan_pendapatan(bytes_pendapatan)
+    
+    dict_bank_bytes = {}
+    list_df_bank = []
+    
+    # Process BCA
+    if file_bca:
+        file_bca.seek(0)
+        bca_bytes = file_bca.read()
+        file_bca.seek(0)
+        dict_bank_bytes['BCA'] = {'bytes': bca_bytes, 'pass': None}
+        pdf_bca = safe_open_pdf(file_bca)
+        if pdf_bca:
             list_df_bank.append(parse_mutasi_generic(pdf_bca, "BCA"))
-            
-        if file_bni:
-            bni_bytes = file_bni.read()
-            dict_bank_bytes['BNI'] = {'bytes': bni_bytes, 'pass': pass_bni}
-            pdf_bni = load_pdf_plumber(bni_bytes, pass_bni)
+        
+    # Process BNI
+    if file_bni:
+        file_bni.seek(0)
+        bni_bytes = file_bni.read()
+        file_bni.seek(0)
+        dict_bank_bytes['BNI'] = {'bytes': bni_bytes, 'pass': pass_bni}
+        pdf_bni = safe_open_pdf(file_bni, pass_bni)
+        if pdf_bni:
             list_df_bank.append(parse_mutasi_generic(pdf_bni, "BNI"))
-                
-        if file_mandiri:
-            mandiri_bytes = file_mandiri.read()
-            dict_bank_bytes['Mandiri'] = {'bytes': mandiri_bytes, 'pass': pass_mandiri}
-            pdf_mandiri = load_pdf_plumber(mandiri_bytes, pass_mandiri)
+            
+    # Process Mandiri
+    if file_mandiri:
+        file_mandiri.seek(0)
+        mandiri_bytes = file_mandiri.read()
+        file_mandiri.seek(0)
+        dict_bank_bytes['Mandiri'] = {'bytes': mandiri_bytes, 'pass': pass_mandiri}
+        pdf_mandiri = safe_open_pdf(file_mandiri, pass_mandiri)
+        if pdf_mandiri:
             list_df_bank.append(parse_mutasi_generic(pdf_mandiri, "Mandiri"))
 
-        if list_df_bank:
-            df_bank = pd.concat(list_df_bank, ignore_index=True)
+    if list_df_bank:
+        df_bank = pd.concat(list_df_bank, ignore_index=True)
 
-            rules_pdf_pendapatan = {}
-            rules_pdf_bank = {'BCA': {}, 'BNI': {}, 'Mandiri': {}}
+        rules_pdf_pendapatan = {}
+        rules_pdf_bank = {'BCA': {}, 'BNI': {}, 'Mandiri': {}}
 
-            sys_matched_idx = set()
-            bank_matched_idx = set()
+        matched_results = []
+        sys_matched_idx = set()
+        bank_matched_idx = set()
 
-            # PINTU MATCHING & ATUR WARNA HIGHLIGHT
-            for s_idx, s_row in df_sys.iterrows():
-                matched_found = False
-                for b_idx, b_row in df_bank.iterrows():
-                    if b_idx in bank_matched_idx:
-                        continue
-                    
-                    if (s_row['amount_sys'] == b_row['amount_bank']) and (s_row['bank_sys'] == b_row['bank']):
-                        bank_name = s_row['bank_sys']
-                        color = COLOR_BCA if bank_name == 'BCA' else (COLOR_BNI if bank_name == 'BNI' else COLOR_MANDIRI)
-                        
-                        # Set rule highlight pendapatan system
-                        rules_pdf_pendapatan[s_row['kode_order']] = color
-                        
-                        # Set rule highlight mutasi bank
-                        # Ambil angka nominal untuk dicari & dihighlight di PDF bank
-                        amt_str = f"{s_row['amount_sys']:,.0f}".replace(',', '.')
-                        rules_pdf_bank[bank_name][amt_str] = color
-
-                        sys_matched_idx.add(s_idx)
-                        bank_matched_idx.add(b_idx)
-                        matched_found = True
-                        break
+        # LOGIKA MATCHING 1:1 & PENENTUAN WARNA HIGHLIGHT
+        for s_idx, s_row in df_sys.iterrows():
+            matched_found = False
+            for b_idx, b_row in df_bank.iterrows():
+                if b_idx in bank_matched_idx:
+                    continue
                 
-                if not matched_found:
-                    # Jika Unmatched di System -> Highlight Pink
-                    rules_pdf_pendapatan[s_row['kode_order']] = COLOR_PINK
+                if (s_row['amount_sys'] == b_row['amount_bank']) and (s_row['bank_sys'] == b_row['bank']):
+                    bank_name = s_row['bank_sys']
+                    color = COLOR_BCA if bank_name == 'BCA' else (COLOR_BNI if bank_name == 'BNI' else COLOR_MANDIRI)
+                    
+                    # Tandai kode order di PDF Pendapatan
+                    rules_pdf_pendapatan[s_row['kode_order']] = color
+                    
+                    # Tandai nominal di PDF Mutasi Bank
+                    amt_str = f"{s_row['amount_sys']:,.0f}".replace(',', '.')
+                    rules_pdf_bank[bank_name][amt_str] = color
 
-            # Unmatched Mutasi Bank -> Highlight Pink
-            unmatched_bank = df_bank[~df_bank.index.isin(bank_matched_idx)].copy()
-            for b_idx, b_row in unmatched_bank.iterrows():
-                bank_name = b_row['bank']
-                amt_str = f"{b_row['amount_bank']:,.0f}".replace(',', '.')
-                rules_pdf_bank[bank_name][amt_str] = COLOR_PINK
+                    matched_results.append({
+                        'Status': 'MATCHED',
+                        'Kode Order': s_row['kode_order'],
+                        'Tgl System': s_row['tanggal_sys'],
+                        'Tgl Bank': b_row['tanggal_bank'],
+                        'Nominal': s_row['amount_sys'],
+                        'Bank': s_row['bank_sys'],
+                        'Ket Mutasi': b_row['keterangan_bank']
+                    })
 
-            st.markdown("---")
-            st.subheader("📥 Download File PDF Yang Sudah Di-Highlight Warna")
+                    sys_matched_idx.add(s_idx)
+                    bank_matched_idx.add(b_idx)
+                    matched_found = True
+                    break
             
-            col_dl1, col_dl2 = st.columns(2)
+            # Jika Pendapatan System tidak ter-match -> Highlight Pink
+            if not matched_found:
+                rules_pdf_pendapatan[s_row['kode_order']] = COLOR_PINK
 
-            with col_dl1:
-                st.markdown("### 1. Laporan Pendapatan Cetakita")
-                pdf_pendapatan_highlighted = highlight_pdf_text(bytes_pendapatan, rules_pdf_pendapatan)
-                st.download_button(
-                    label="📄 Download PDF Pendapatan (Sudah Di-Highlight)",
-                    data=pdf_pendapatan_highlighted,
-                    file_name="Pendapatan_Cetakita_Highlighted.pdf",
-                    mime="application/pdf",
-                    type="primary"
-                )
+        # Unmatched di Mutasi Bank -> Highlight Pink
+        unmatched_bank = df_bank[~df_bank.index.isin(bank_matched_idx)].copy()
+        for b_idx, b_row in unmatched_bank.iterrows():
+            bank_name = b_row['bank']
+            amt_str = f"{b_row['amount_bank']:,.0f}".replace(',', '.')
+            rules_pdf_bank[bank_name][amt_str] = COLOR_PINK
 
-            with col_dl2:
-                st.markdown("### 2. Rekening Koran Bank")
-                for bank_name, b_info in dict_bank_bytes.items():
-                    if rules_pdf_bank[bank_name]:
-                        pdf_bank_highlighted = highlight_pdf_text(b_info['bytes'], rules_pdf_bank[bank_name], b_info['pass'])
-                        st.download_button(
-                            label=f"🏦 Download PDF Mutasi {bank_name} (Di-Highlight)",
-                            data=pdf_bank_highlighted,
-                            file_name=f"Mutasi_{bank_name}_Highlighted.pdf",
-                            mime="application/pdf"
-                        )
+        unmatched_sys = df_sys[~df_sys.index.isin(sys_matched_idx)].copy()
 
-elif main_menu == "Finance & Accounting" and submenu == "Laporan Ringkasan":
-    st.title("📈 Submenu: Laporan Ringkasan")
-    st.info("Area ringkasan & grafik laporan keuangan.")
+        # STATISTIK METRICS
+        st.markdown("---")
+        col_m1, col_m2, col_m3 = st.columns(3)
+        col_m1.metric("✅ Total Matched", len(matched_results))
+        col_m2.metric("⚠️ Order System Belum Ada di Bank", len(unmatched_sys))
+        col_m3.metric("⚠️ Uang Masuk Tanpa Record System", len(unmatched_bank))
+
+        # TOMBOL DOWNLOAD PDF BERWARNA / HIGHLIGHTED
+        st.markdown("---")
+        st.subheader("📥 Download File PDF Ter-Highlight")
+        
+        col_dl1, col_dl2 = st.columns(2)
+
+        with col_dl1:
+            st.markdown("#### 1. PDF Pendapatan Cetakita")
+            pdf_pendapatan_highlighted = highlight_pdf_text(bytes_pendapatan, rules_pdf_pendapatan)
+            st.download_button(
+                label="📄 Download PDF Pendapatan (Sudah Di-Highlight)",
+                data=pdf_pendapatan_highlighted,
+                file_name=f"Pendapatan_Cetakita_Highlighted_{datetime.now().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf",
+                type="primary"
+            )
+
+        with col_dl2:
+            st.markdown("#### 2. PDF Rekening Koran Bank")
+            for bank_name, b_info in dict_bank_bytes.items():
+                if rules_pdf_bank[bank_name]:
+                    pdf_bank_highlighted = highlight_pdf_text(b_info['bytes'], rules_pdf_bank[bank_name], b_info['pass'])
+                    st.download_button(
+                        label=f"🏦 Download PDF Mutasi {bank_name} (Di-Highlight)",
+                        data=pdf_bank_highlighted,
+                        file_name=f"Mutasi_{bank_name}_Highlighted_{datetime.now().strftime('%Y%m%d')}.pdf",
+                        mime="application/pdf"
+                    )
+
+        # TABEL DISPLAY DENGAN STYLING STREAMLIT
+        st.markdown("---")
+        def highlight_matched_tbl(row):
+            bank = str(row['Bank']).upper()
+            if bank == 'BCA':
+                return ['background-color: #FFF9C4; color: #000000;'] * len(row)
+            elif bank == 'BNI':
+                return ['background-color: #C8E6C9; color: #000000;'] * len(row)
+            elif bank == 'MANDIRI':
+                return ['background-color: #E1F5FE; color: #000000;'] * len(row)
+            return [''] * len(row)
+
+        def highlight_unmatched_tbl(row):
+            return ['background-color: #FFCDD2; color: #000000;'] * len(row)
+
+        tab1, tab2, tab3 = st.tabs(["✅ Data Matched", "⚠️ Pendapatan Belum Masuk Bank", "⚠️ Mutasi Tidak Terdaftar"])
+        
+        with tab1:
+            if matched_results:
+                df_matched = pd.DataFrame(matched_results)
+                st.dataframe(df_matched.style.apply(highlight_matched_tbl, axis=1), use_container_width=True)
+            else:
+                st.info("Belum ada data matched.")
+
+        with tab2:
+            if not unmatched_sys.empty:
+                st.dataframe(unmatched_sys.style.apply(highlight_unmatched_tbl, axis=1), use_container_width=True)
+            else:
+                st.success("Semua transaksi pendapatan cocok!")
+
+        with tab3:
+            if not unmatched_bank.empty:
+                st.dataframe(unmatched_bank.style.apply(highlight_unmatched_tbl, axis=1), use_container_width=True)
+            else:
+                st.success("Tidak ada transaksi mutasi mencurigakan!")
