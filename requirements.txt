@@ -6,4 +6,5 @@ qrcode[pil]
 Pillow
 python-pptx
 altair<5.0.0
-yt-dlp
+pdfplumber
+pypdf
