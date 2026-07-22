@@ -8,3 +8,4 @@ python-pptx
 altair<5.0.0
 pdfplumber
 pypdf
+pymupdf
