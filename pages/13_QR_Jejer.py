@@ -8,10 +8,20 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 from reportlab.lib.colors import HexColor
 
-# Konversi Satuan (1 mm = 2.83465 points di ReportLab)
 MM2PT = 72.0 / 25.4 
 
 st.set_page_config(page_title="VDP & Layout Cetak Studio", layout="wide")
+
+# CSS khusus agar panel preview (sebelah kanan) tetap melayang (sticky) saat panel kiri di-scroll
+st.markdown("""
+    <style>
+    [data-testid="column"]:nth-child(2) {
+        position: sticky;
+        top: 2rem;
+        align-self: flex-start;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 st.title("🖨️ VDP Generator & Imposition Studio")
 st.caption("Aplikasi Variable Data Printing dengan QR Code, Numerator, dan Layout Cetak Massal (PDF / Corel-Ready)")
@@ -31,7 +41,6 @@ with col_up2:
     data_file = st.file_uploader("Upload Data (CSV/Excel)", type=["csv", "xlsx"])
 
 if design_file and data_file:
-    # Read Data & Image
     if data_file.name.endswith('.csv'):
         df = pd.read_csv(data_file)
     else:
@@ -39,14 +48,12 @@ if design_file and data_file:
         
     base_img = Image.open(design_file)
     img_pixel_w, img_pixel_h = base_img.size
-    aspect_ratio = img_pixel_h / img_pixel_w
 
-    st.success(f"File terdeteksi! Total Data: **{len(df)} baris**. Resolusi Gambar: **{img_pixel_w}x{img_pixel_h} px**.")
-    
+    st.success(f"File terdeteksi! Total Data: **{len(df)} baris**. Resolusi Gambar Original: **{img_pixel_w}x{img_pixel_h} px**.")
     st.divider()
 
     # ----------------------------------------------------
-    # 2. LAYOUT UTAMA: PENGATURAN (KIRI) vs PREVIEW (KANAN)
+    # 2. LAYOUT UTAMA: PENGATURAN (KIRI) vs STICKY PREVIEW (KANAN)
     # ----------------------------------------------------
     st.subheader("2. Pengaturan Desain & Live Preview")
     
@@ -54,14 +61,28 @@ if design_file and data_file:
 
     # PANEL KIRI: PENGATURAN
     with col_settings:
-        tab1, tab2 = st.tabs(["🎯 Posisi QR & Numerator", "📐 Kertas Master & Jarak (Gutter)"])
+        tab1, tab2 = st.tabs(["🎯 Dimensi, QR & Numerator", "📐 Kertas Master & Jarak (Gutter)"])
 
-        # TAB 1: POSISI ELEMEN & DIMENSI
+        # TAB 1: DIMENSI & POSISI ELEMEN
         with tab1:
-            st.markdown("##### 📏 Ukuran Kartu Fisik")
-            card_w_mm = st.number_input("Lebar Desain (mm)", min_value=10.0, value=90.0, step=1.0)
-            card_h_mm = round(card_w_mm * aspect_ratio, 2)
-            st.caption(f"Tinggi Otomatis: **{card_h_mm} mm**")
+            st.markdown("##### 📏 Ukuran Fisik Desain & Orientasi")
+            c_dim1, c_dim2, c_dim3 = st.columns(3)
+            with c_dim1:
+                card_w_input = st.number_input("Lebar (mm)", min_value=10.0, value=90.0, step=1.0)
+            with c_dim2:
+                card_h_input = st.number_input("Tinggi (mm)", min_value=10.0, value=55.0, step=1.0)
+            with c_dim3:
+                orientation = st.radio("Orientasi Kartu", ["Landscape", "Portrait"], horizontal=True)
+
+            # Penyesuaian Orientasi Kartu
+            if orientation == "Landscape":
+                card_w_mm = max(card_w_input, card_h_input)
+                card_h_mm = min(card_w_input, card_h_input)
+            else:
+                card_w_mm = min(card_w_input, card_h_input)
+                card_h_mm = max(card_w_input, card_h_input)
+
+            st.caption(f"Ukuran Kartu Efektif: **{card_w_mm} mm × {card_h_mm} mm** ({orientation})")
 
             st.markdown("---")
             st.markdown("##### 📲 Setting QR Code")
@@ -75,13 +96,18 @@ if design_file and data_file:
             enable_num = st.checkbox("Aktifkan Numerator", value=True)
             if enable_num:
                 num_col = st.selectbox("Kolom Data untuk Numerator:", df.columns, index=min(1, len(df.columns)-1))
-                num_font_size = st.slider("Ukuran Font (pt)", 6, 72, 14)
-                num_font_color = st.color_picker("Warna Teks", "#000000")
+                c_num1, c_num2 = st.columns(2)
+                with c_num1:
+                    num_font_size = st.slider("Ukuran Font (pt)", 6, 72, 14)
+                with c_num2:
+                    num_font_color = st.color_picker("Warna Teks", "#000000")
+                
+                num_align = st.radio("Rata Teks (Alignment)", ["Kiri", "Tengah", "Kanan"], horizontal=True)
                 num_x_mm = st.slider("Posisi Teks - X dari Kiri (mm)", 0.0, card_w_mm, card_w_mm * 0.1, step=0.5)
                 num_y_mm = st.slider("Posisi Teks - Y dari Atas (mm)", 0.0, card_h_mm, card_h_mm * 0.8, step=0.5)
             else:
                 num_col = None
-                num_font_size, num_font_color, num_x_mm, num_y_mm = 14, "#000000", 0.0, 0.0
+                num_font_size, num_font_color, num_x_mm, num_y_mm, num_align = 14, "#000000", 0.0, 0.0, "Kiri"
 
         # TAB 2: LEMBAR MASTER & GUTTER
         with tab2:
@@ -104,25 +130,26 @@ if design_file and data_file:
             margin_left_mm = st.number_input("Margin Kiri Kertas (mm)", value=10.0, min_value=0.0, step=1.0)
             margin_top_mm = st.number_input("Margin Atas Kertas (mm)", value=10.0, min_value=0.0, step=1.0)
 
-    # Hitung Kalkulasi Kapasitas Lembar
+    # Kalkulasi Kapasitas Lembar Master
     usable_w = sheet_w_mm - margin_left_mm
     usable_h = sheet_h_mm - margin_top_mm
-    
     cols_count = max(1, math.floor((usable_w + gap_x_mm) / (card_w_mm + gap_x_mm)))
     rows_count = max(1, math.floor((usable_h + gap_y_mm) / (card_h_mm + gap_y_mm)))
     items_per_sheet = cols_count * rows_count
     total_pages = math.ceil(len(df) / items_per_sheet)
 
-    # PANEL KANAN: LIVE PREVIEW
+    # PANEL KANAN: LIVE PREVIEW (MELAYANG/STICKY)
     with col_preview:
-        st.markdown("##### 👁️ Live Preview Desain & Elemen")
+        st.markdown("##### 👁️ Live Preview Real-time")
         
-        # Konversi skala pixel untuk rendering Pillow
-        preview_scale = img_pixel_w / card_w_mm
-        preview_img = base_img.copy().convert("RGB")
+        # Resize base image ke dimensi fisik mm yang ditentukan
+        resized_base_img = base_img.copy().resize((int(card_w_mm * 10), int(card_h_mm * 10))).convert("RGB")
+        preview_scale = (card_w_mm * 10) / card_w_mm # 10 px per mm
+        
+        preview_img = resized_base_img.copy()
         draw = ImageDraw.Draw(preview_img)
         
-        # 1. Render Preview QR Code
+        # 1. Render QR Code
         dummy_qr_size_px = int(qr_size_mm * preview_scale)
         dummy_qr_x_px = int(qr_x_mm * preview_scale)
         dummy_qr_y_px = int(qr_y_mm * preview_scale)
@@ -133,18 +160,14 @@ if design_file and data_file:
         qr_img_pil = qr.make_image(fill_color="black", back_color="white").resize((dummy_qr_size_px, dummy_qr_size_px))
         preview_img.paste(qr_img_pil, (dummy_qr_x_px, dummy_qr_y_px))
         
-        # 2. Render Preview Numerator / Teks
+        # 2. Render Numerator / Teks Real-time
         if enable_num:
             num_x_px = int(num_x_mm * preview_scale)
             num_y_px = int(num_y_mm * preview_scale)
             
-            # Ambil sampel teks dari baris pertama data
             sample_text = str(df[num_col].iloc[0]) if num_col in df.columns else "INV-001"
-            
-            # Konversi ukuran font pt ke pixel gambar
             font_size_px = max(12, int(num_font_size * (preview_scale / MM2PT)))
             
-            # Load Font TTF
             font_loaded = False
             for font_name in ["arial.ttf", "Arial.ttf", "DejaVuSans.ttf"]:
                 try:
@@ -157,15 +180,25 @@ if design_file and data_file:
             if not font_loaded:
                 font = ImageFont.load_default()
 
-            draw.text((num_x_px, num_y_px), sample_text, fill=num_font_color, font=font)
+            # Align Text handling
+            if num_align == "Tengah":
+                anchor = "ms"
+            elif num_align == "Kanan":
+                anchor = "rs"
+            else:
+                anchor = "ls"
+
+            try:
+                draw.text((num_x_px, num_y_px), sample_text, fill=num_font_color, font=font, anchor=anchor)
+            except:
+                draw.text((num_x_px, num_y_px), sample_text, fill=num_font_color, font=font)
         
-        st.image(preview_img, use_container_width=True, caption="Pratinjau Posisi Real-time")
+        st.image(preview_img, use_container_width=True, caption=f"Pratinjau ({card_w_mm} x {card_h_mm} mm)")
 
         st.info(
             f"📊 **Kapasitas Lembar Master:**\n"
             f"- Ukuran Lembar: **{sheet_w_mm} x {sheet_h_mm} mm**\n"
             f"- Muat: **{cols_count} Kolom** × **{rows_count} Baris** = **{items_per_sheet} Kartu/Sheet**\n"
-            f"- Jarak Potong: **{gap_x_mm} mm (H)** / **{gap_y_mm} mm (V)**\n"
             f"- Total PDF: **{total_pages} Lembar Master**"
         )
 
@@ -205,7 +238,6 @@ if design_file and data_file:
                             qr_val = str(row_data[qr_col])
                             num_val = str(row_data[num_col]) if enable_num else ""
                             
-                            # Hitung posisi di lembar cetak
                             card_left_pt = margin_left_pt + col * (card_w_pt + gap_x_pt)
                             card_top_from_top_pt = margin_top_pt + r * (card_h_pt + gap_y_pt)
                             card_bottom_pt = sheet_h_pt - card_top_from_top_pt - card_h_pt
@@ -235,7 +267,13 @@ if design_file and data_file:
                                 c.setFillColor(HexColor(num_font_color))
                                 actual_num_x_pt = card_left_pt + num_x_pt
                                 actual_num_y_pt = card_bottom_pt + card_h_pt - num_y_pt - (num_font_size * 0.8)
-                                c.drawString(actual_num_x_pt, actual_num_y_pt, num_val)
+                                
+                                if num_align == "Tengah":
+                                    c.drawCentredString(actual_num_x_pt, actual_num_y_pt, num_val)
+                                elif num_align == "Kanan":
+                                    c.drawRightString(actual_num_x_pt, actual_num_y_pt, num_val)
+                                else:
+                                    c.drawString(actual_num_x_pt, actual_num_y_pt, num_val)
                                 
                             item_idx += 1
                     
