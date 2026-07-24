@@ -8,25 +8,30 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 from reportlab.lib.colors import HexColor
 
-# Konversi Satuan
-MM2PT = 72.0 / 25.4  # 1 mm = 2.83465 points (ReportLab)
+# Konversi Satuan (1 mm = 2.83465 points di ReportLab)
+MM2PT = 72.0 / 25.4 
 
-st.set_page_config(page_title="VDP Generator & Imposition Studio", layout="wide")
+st.set_page_config(page_title="VDP & Layout Cetak Studio", layout="wide")
 
-st.title("🖨️ VDP Generator & Layout Cetak Massal")
-st.caption("Aplikasi Variable Data Printing dengan QR Code, Numerator, dan Penataan Lembar Cetak (PDF Vector / Corel-Ready)")
+st.title("🖨️ VDP Generator & Imposition Studio")
+st.caption("Aplikasi Variable Data Printing dengan QR Code, Numerator, dan Layout Cetak Massal (PDF / Corel-Ready)")
 
-# --- SIDEBAR: UPLOAD FILE ---
-with st.sidebar:
-    st.header("1. Upload Asset")
-    design_file = st.file_uploader("Upload Desain (PNG/JPG)", type=["png", "jpg", "jpeg"])
+st.divider()
+
+# ----------------------------------------------------
+# 1. UPLOAD ASSETS (MAIN PAGE)
+# ----------------------------------------------------
+st.subheader("1. Upload File Utama")
+col_up1, col_up2 = st.columns(2)
+
+with col_up1:
+    design_file = st.file_uploader("Upload Desain Template (PNG/JPG)", type=["png", "jpg", "jpeg"])
+
+with col_up2:
     data_file = st.file_uploader("Upload Data (CSV/Excel)", type=["csv", "xlsx"])
-    
-    st.divider()
-    st.info("💡 **Tips CorelDRAW:** Setelah men-download PDF, gunakan perintah **File > Import** di CorelDRAW dan pilih **Text as Curves / Editable** untuk memisah tiap objek.")
 
 if design_file and data_file:
-    # Read Data
+    # Read Data & Image
     if data_file.name.endswith('.csv'):
         df = pd.read_csv(data_file)
     else:
@@ -36,96 +41,96 @@ if design_file and data_file:
     img_pixel_w, img_pixel_h = base_img.size
     aspect_ratio = img_pixel_h / img_pixel_w
 
-    # Tab Interface
-    tab1, tab2, tab3 = st.tabs(["📏 1. Ukuran & Elemen Desain", "📐 2. Layout Lembar Cetak", "👁️ 3. Preview & Generate"])
+    st.success(f" File terdeteksi! Total Data: **{len(df)} baris**. Resolusi Gambar: **{img_pixel_w}x{img_pixel_h} px**.")
+    
+    st.divider()
 
     # ----------------------------------------------------
-    # TAB 1: UKURAN KARTU & POSISI ELEMEN (QR & NUMERATOR)
+    # 2. PENGATURAN DIMENSI, ELEMEN & LEMBAR CETAK
     # ----------------------------------------------------
+    st.subheader("2. Pengaturan Elemen & Layout Lembar Master")
+    
+    tab1, tab2 = st.tabs(["🎯 Posisi QR & Numerator", "📐 Ukuran Kertas Master & Jarak (Bleed/Gutter)"])
+
+    # TAB 1: POSISI ELEMEN
     with tab1:
-        st.subheader("Ukuran Fisik Desain (Satuan mm)")
-        card_w_mm = st.number_input("Lebar Fisik Desain (mm)", min_value=10.0, value=90.0, step=1.0)
-        card_h_mm = round(card_w_mm * aspect_ratio, 2)
-        st.caption(f"Tinggi Otomatis (Sesuai Rasio Gambar): **{card_h_mm} mm**")
+        col_dim, col_qr, col_num = st.columns([1, 1, 1])
 
-        col_qr, col_num = st.columns(2)
+        with col_dim:
+            st.markdown("##### 📏 Ukuran Kartu Fisik")
+            card_w_mm = st.number_input("Lebar Desain (mm)", min_value=10.0, value=90.0, step=1.0)
+            card_h_mm = round(card_w_mm * aspect_ratio, 2)
+            st.info(f"Tinggi Otomatis: **{card_h_mm} mm**")
 
-        # Setting QR Code
         with col_qr:
-            st.markdown("### 📲 Pengaturan QR Code")
-            qr_col = st.selectbox("Kolom Data untuk QR:", df.columns, index=0)
+            st.markdown("##### 📲 Setting QR Code")
+            qr_col = st.selectbox("Kolom QR Code:", df.columns, index=0)
             qr_size_mm = st.slider("Ukuran QR (mm)", 5.0, min(card_w_mm, card_h_mm), 20.0, step=0.5)
             qr_x_mm = st.slider("Posisi QR - X dari Kiri (mm)", 0.0, card_w_mm - qr_size_mm, card_w_mm * 0.65, step=0.5)
             qr_y_mm = st.slider("Posisi QR - Y dari Atas (mm)", 0.0, card_h_mm - qr_size_mm, card_h_mm * 0.5, step=0.5)
 
-        # Setting Numerator
         with col_num:
-            st.markdown("### 🔢 Pengaturan Numerator / Teks")
-            enable_num = st.checkbox("Aktifkan Numerator / Teks", value=True)
+            st.markdown("##### 🔢 Setting Numerator / Teks")
+            enable_num = st.checkbox("Aktifkan Numerator", value=True)
             if enable_num:
-                num_col = st.selectbox("Kolom Data untuk Numerator:", df.columns, index=min(1, len(df.columns)-1))
+                num_col = st.selectbox("Kolom Numerator:", df.columns, index=min(1, len(df.columns)-1))
                 num_font_size = st.slider("Ukuran Font (pt)", 6, 72, 14)
                 num_font_color = st.color_picker("Warna Teks", "#000000")
-                num_x_mm = st.slider("Posisi Teks - X dari Kiri (mm)", 0.0, card_w_mm, card_w_mm * 0.1, step=0.5)
-                num_y_mm = st.slider("Posisi Teks - Y dari Atas (mm)", 0.0, card_h_mm, card_h_mm * 0.8, step=0.5)
+                num_x_mm = st.slider("Posisi Teks - X (mm)", 0.0, card_w_mm, card_w_mm * 0.1, step=0.5)
+                num_y_mm = st.slider("Posisi Teks - Y (mm)", 0.0, card_h_mm, card_h_mm * 0.8, step=0.5)
             else:
                 num_col = None
                 num_font_size, num_font_color, num_x_mm, num_y_mm = 12, "#000000", 0, 0
 
-    # ----------------------------------------------------
-    # TAB 2: LAYOUT LEMBAR CETAK (IMPOSITION / N-UP)
-    # ----------------------------------------------------
+    # TAB 2: LEMBAR MASTER & GUTTER
     with tab2:
-        st.subheader("Pengaturan Lembar Master Cetak")
-        
-        c1, c2 = st.columns(2)
-        with c1:
-            preset = st.selectbox("Preset Ukuran Kertas Master:", ["29.7 x 41.0 cm (Custom A3+)", "A3 (297 x 420 mm)", "A4 (210 x 297 mm)", "Custom"])
-            if preset == "29.7 x 41.0 cm (Custom A3+)":
+        c_sheet, c_gutter = st.columns(2)
+
+        with c_sheet:
+            st.markdown("##### 📄 Kertas Master Cetak")
+            preset = st.selectbox("Preset Ukuran Lembar Master:", ["29.7 x 41.0 cm (Custom)", "A3 (297 x 420 mm)", "A4 (210 x 297 mm)", "Custom"])
+            if preset == "29.7 x 41.0 cm (Custom)":
                 sheet_w_mm, sheet_h_mm = 297.0, 410.0
             elif preset == "A3 (297 x 420 mm)":
                 sheet_w_mm, sheet_h_mm = 297.0, 420.0
             elif preset == "A4 (210 x 297 mm)":
                 sheet_w_mm, sheet_h_mm = 210.0, 297.0
             else:
-                sheet_w_mm = st.number_input("Lebar Kertas Master (mm)", value=297.0)
-                sheet_h_mm = st.number_input("Tinggi Kertas Master (mm)", value=410.0)
+                sheet_w_mm = st.number_input("Lebar Lembar Master (mm)", value=297.0)
+                sheet_h_mm = st.number_input("Tinggi Lembar Master (mm)", value=410.0)
 
-        with c2:
-            st.markdown("### 📐 Margin & Jarak Antar Objek (Gutter)")
-            gap_x_mm = st.number_input("Jarak Horisontal Antar Desain / Bleed (mm)", value=2.0, min_value=0.0, step=0.5)
-            gap_y_mm = st.number_input("Jarak Vertikal Antar Desain / Bleed (mm)", value=2.0, min_value=0.0, step=0.5)
+        with c_gutter:
+            st.markdown("##### ✂️ Jarak Antar Objek & Margin")
+            gap_x_mm = st.number_input("Jarak Horisontal / Potong (mm)", value=2.0, min_value=0.0, step=0.5)
+            gap_y_mm = st.number_input("Jarak Vertikal / Potong (mm)", value=2.0, min_value=0.0, step=0.5)
             margin_left_mm = st.number_input("Margin Kiri Kertas (mm)", value=10.0, min_value=0.0, step=1.0)
             margin_top_mm = st.number_input("Margin Atas Kertas (mm)", value=10.0, min_value=0.0, step=1.0)
 
-        # Hitung kalkulasi kapasitas lembar
-        usable_w = sheet_w_mm - margin_left_mm
-        usable_h = sheet_h_mm - margin_top_mm
-        
-        cols_count = math.floor((usable_w + gap_x_mm) / (card_w_mm + gap_x_mm))
-        rows_count = math.floor((usable_h + gap_y_mm) / (card_h_mm + gap_y_mm))
-        
-        cols_count = max(1, cols_count)
-        rows_count = max(1, rows_count)
-        items_per_sheet = cols_count * rows_count
-        total_pages = math.ceil(len(df) / items_per_sheet)
+    # Hitung Kalkulasi Kapasitas Lembar
+    usable_w = sheet_w_mm - margin_left_mm
+    usable_h = sheet_h_mm - margin_top_mm
+    
+    cols_count = max(1, math.floor((usable_w + gap_x_mm) / (card_w_mm + gap_x_mm)))
+    rows_count = max(1, math.floor((usable_h + gap_y_mm) / (card_h_mm + gap_y_mm)))
+    items_per_sheet = cols_count * rows_count
+    total_pages = math.ceil(len(df) / items_per_sheet)
 
-        st.success(f"📊 **Kapasitas Lembar Cetak:** **{cols_count} Kolom** × **{rows_count} Baris** = **{items_per_sheet} Kartu/Lembar**. "
-                   f"Total data: {len(df)} item ({total_pages} Halaman PDF).")
+    st.divider()
 
     # ----------------------------------------------------
-    # TAB 3: PREVIEW & GENERATE PDF
+    # 3. PREVIEW & GENERATE
     # ----------------------------------------------------
-    with tab3:
-        st.subheader("Pratinjau Desain Tunggal")
-        
-        # Rendition Preview menggunakan PIL (Skala Pixel)
+    st.subheader("3. Pratinjau Desain & Process Generate")
+    
+    col_prev, col_action = st.columns([1, 1])
+
+    with col_prev:
+        # Render Preview Single Card
         preview_scale = img_pixel_w / card_w_mm
-        
         preview_img = base_img.copy().convert("RGB")
         draw = ImageDraw.Draw(preview_img)
         
-        # Render Dummy QR
+        # Draw Dummy QR
         dummy_qr_size_px = int(qr_size_mm * preview_scale)
         dummy_qr_x_px = int(qr_x_mm * preview_scale)
         dummy_qr_y_px = int(qr_y_mm * preview_scale)
@@ -136,27 +141,33 @@ if design_file and data_file:
         qr_img_pil = qr.make_image(fill_color="black", back_color="white").resize((dummy_qr_size_px, dummy_qr_size_px))
         preview_img.paste(qr_img_pil, (dummy_qr_x_px, dummy_qr_y_px))
         
-        # Render Dummy Numerator Text
+        # Draw Dummy Numerator
         if enable_num:
             num_x_px = int(num_x_mm * preview_scale)
             num_y_px = int(num_y_mm * preview_scale)
-            font_size_px = int(num_font_size * preview_scale * 0.35) # Approx scale
+            font_size_px = int(num_font_size * preview_scale * 0.35)
             try:
                 font = ImageFont.truetype("arial.ttf", font_size_px)
             except:
                 font = ImageFont.load_default()
-            draw.text((num_x_px, num_y_px), "INV-001 (SAMPLE)", fill=num_font_color, font=font)
+            draw.text((num_x_px, num_y_px), "INV-001", fill=num_font_color, font=font)
         
-        st.image(preview_img, width=450, caption="Preview Posisi Elemen pada Desain")
+        st.image(preview_img, width=420, caption="Pratinjau Layout 1 Desain")
 
-        st.divider()
-
-        # Generate Full Master Imposition PDF
-        if st.button("🚀 Generate PDF Layout Cetak Massal", type="primary"):
-            with st.spinner("Menyusun layout cetak PDF... Mohon tunggu."):
+    with col_action:
+        st.info(
+            f"📊 **Informasi Layout Master:**\n"
+            f"- Ukuran Lembar: **{sheet_w_mm} x {sheet_h_mm} mm**\n"
+            f"- Muat: **{cols_count} Kolom** × **{rows_count} Baris** = **{items_per_sheet} Kartu/Lembar**\n"
+            f"- Jarak Potong: **{gap_x_mm} mm (H)** / **{gap_y_mm} mm (V)**\n"
+            f"- Total Halaman PDF: **{total_pages} Lembar Master**"
+        )
+        
+        st.write("")
+        if st.button("🚀 Generate PDF Master (CorelDRAW Ready)", type="primary", use_container_width=True):
+            with st.spinner("Memproses layout cetak masif... Mohon tunggu sebentar."):
                 pdf_buffer = io.BytesIO()
                 
-                # Setup Lembar Master PDF
                 sheet_w_pt = sheet_w_mm * MM2PT
                 sheet_h_pt = sheet_h_mm * MM2PT
                 
@@ -180,7 +191,6 @@ if design_file and data_file:
                 total_items = len(df)
                 
                 while item_idx < total_items:
-                    # Gambar tiap grid pada lembar saat ini
                     for r in range(rows_count):
                         for col in range(cols_count):
                             if item_idx >= total_items:
@@ -190,12 +200,12 @@ if design_file and data_file:
                             qr_val = str(row_data[qr_col])
                             num_val = str(row_data[num_col]) if enable_num else ""
                             
-                            # Hitung Koordinat Kartu di Lembar Master (ReportLab Y dari Bawah)
+                            # Hitung posisi di lembar cetak
                             card_left_pt = margin_left_pt + col * (card_w_pt + gap_x_pt)
                             card_top_from_top_pt = margin_top_pt + r * (card_h_pt + gap_y_pt)
                             card_bottom_pt = sheet_h_pt - card_top_from_top_pt - card_h_pt
                             
-                            # 1. Gambar Desain Background
+                            # 1. Gambar Background
                             design_file.seek(0)
                             c.drawImage(ImageReader(design_file), card_left_pt, card_bottom_pt, width=card_w_pt, height=card_h_pt)
                             
@@ -214,7 +224,7 @@ if design_file and data_file:
                             
                             c.drawImage(ImageReader(qr_mem), actual_qr_x_pt, actual_qr_y_pt, width=qr_size_pt, height=qr_size_pt)
                             
-                            # 3. Gambar Numerator / Teks
+                            # 3. Gambar Numerator
                             if enable_num:
                                 c.setFont("Helvetica-Bold", num_font_size)
                                 c.setFillColor(HexColor(num_font_color))
@@ -224,16 +234,17 @@ if design_file and data_file:
                                 
                             item_idx += 1
                     
-                    c.showPage() # Buat halaman baru jika sheet penuh
+                    c.showPage()
                 
                 c.save()
                 pdf_buffer.seek(0)
                 
                 st.download_button(
-                    label="📥 Download File Master PDF (Siap Impor ke CorelDRAW)",
+                    label="📥 Download Hasil PDF Master",
                     data=pdf_buffer,
-                    file_name="Master_Imposition_VDP.pdf",
-                    mime="application/pdf"
+                    file_name="Master_Cetak_VDP.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
                 )
 else:
-    st.info("👈 Silakan upload file Desain dan File Data di sidebar untuk memulainya.")
+    st.info(" Silakan upload **File Desain Template** dan **File Data CSV/Excel** di atas untuk mulai memproses.")
