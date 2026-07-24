@@ -19,7 +19,7 @@ st.caption("Aplikasi Variable Data Printing dengan QR Code, Numerator, dan Layou
 st.divider()
 
 # ----------------------------------------------------
-# 1. UPLOAD ASSETS (MAIN PAGE)
+# 1. UPLOAD ASSETS
 # ----------------------------------------------------
 st.subheader("1. Upload File Utama")
 col_up1, col_up2 = st.columns(2)
@@ -41,52 +41,50 @@ if design_file and data_file:
     img_pixel_w, img_pixel_h = base_img.size
     aspect_ratio = img_pixel_h / img_pixel_w
 
-    st.success(f" File terdeteksi! Total Data: **{len(df)} baris**. Resolusi Gambar: **{img_pixel_w}x{img_pixel_h} px**.")
+    st.success(f"File terdeteksi! Total Data: **{len(df)} baris**. Resolusi Gambar: **{img_pixel_w}x{img_pixel_h} px**.")
     
     st.divider()
 
     # ----------------------------------------------------
-    # 2. PENGATURAN DIMENSI, ELEMEN & LEMBAR CETAK
+    # 2. LAYOUT UTAMA: PENGATURAN (KIRI) vs PREVIEW (KANAN)
     # ----------------------------------------------------
-    st.subheader("2. Pengaturan Elemen & Layout Lembar Master")
+    st.subheader("2. Pengaturan Desain & Live Preview")
     
-    tab1, tab2 = st.tabs(["🎯 Posisi QR & Numerator", "📐 Ukuran Kertas Master & Jarak (Bleed/Gutter)"])
+    col_settings, col_preview = st.columns([1.1, 0.9])
 
-    # TAB 1: POSISI ELEMEN
-    with tab1:
-        col_dim, col_qr, col_num = st.columns([1, 1, 1])
+    # PANEL KIRI: PENGATURAN
+    with col_settings:
+        tab1, tab2 = st.tabs(["🎯 Posisi QR & Numerator", "📐 Kertas Master & Jarak (Gutter)"])
 
-        with col_dim:
+        # TAB 1: POSISI ELEMEN & DIMENSI
+        with tab1:
             st.markdown("##### 📏 Ukuran Kartu Fisik")
             card_w_mm = st.number_input("Lebar Desain (mm)", min_value=10.0, value=90.0, step=1.0)
             card_h_mm = round(card_w_mm * aspect_ratio, 2)
-            st.info(f"Tinggi Otomatis: **{card_h_mm} mm**")
+            st.caption(f"Tinggi Otomatis: **{card_h_mm} mm**")
 
-        with col_qr:
+            st.markdown("---")
             st.markdown("##### 📲 Setting QR Code")
-            qr_col = st.selectbox("Kolom QR Code:", df.columns, index=0)
+            qr_col = st.selectbox("Kolom Data untuk QR:", df.columns, index=0)
             qr_size_mm = st.slider("Ukuran QR (mm)", 5.0, min(card_w_mm, card_h_mm), 20.0, step=0.5)
             qr_x_mm = st.slider("Posisi QR - X dari Kiri (mm)", 0.0, card_w_mm - qr_size_mm, card_w_mm * 0.65, step=0.5)
             qr_y_mm = st.slider("Posisi QR - Y dari Atas (mm)", 0.0, card_h_mm - qr_size_mm, card_h_mm * 0.5, step=0.5)
 
-        with col_num:
+            st.markdown("---")
             st.markdown("##### 🔢 Setting Numerator / Teks")
             enable_num = st.checkbox("Aktifkan Numerator", value=True)
             if enable_num:
-                num_col = st.selectbox("Kolom Numerator:", df.columns, index=min(1, len(df.columns)-1))
+                num_col = st.selectbox("Kolom Data untuk Numerator:", df.columns, index=min(1, len(df.columns)-1))
                 num_font_size = st.slider("Ukuran Font (pt)", 6, 72, 14)
                 num_font_color = st.color_picker("Warna Teks", "#000000")
-                num_x_mm = st.slider("Posisi Teks - X (mm)", 0.0, card_w_mm, card_w_mm * 0.1, step=0.5)
-                num_y_mm = st.slider("Posisi Teks - Y (mm)", 0.0, card_h_mm, card_h_mm * 0.8, step=0.5)
+                num_x_mm = st.slider("Posisi Teks - X dari Kiri (mm)", 0.0, card_w_mm, card_w_mm * 0.1, step=0.5)
+                num_y_mm = st.slider("Posisi Teks - Y dari Atas (mm)", 0.0, card_h_mm, card_h_mm * 0.8, step=0.5)
             else:
                 num_col = None
-                num_font_size, num_font_color, num_x_mm, num_y_mm = 12, "#000000", 0, 0
+                num_font_size, num_font_color, num_x_mm, num_y_mm = 14, "#000000", 0.0, 0.0
 
-    # TAB 2: LEMBAR MASTER & GUTTER
-    with tab2:
-        c_sheet, c_gutter = st.columns(2)
-
-        with c_sheet:
+        # TAB 2: LEMBAR MASTER & GUTTER
+        with tab2:
             st.markdown("##### 📄 Kertas Master Cetak")
             preset = st.selectbox("Preset Ukuran Lembar Master:", ["29.7 x 41.0 cm (Custom)", "A3 (297 x 420 mm)", "A4 (210 x 297 mm)", "Custom"])
             if preset == "29.7 x 41.0 cm (Custom)":
@@ -99,7 +97,7 @@ if design_file and data_file:
                 sheet_w_mm = st.number_input("Lebar Lembar Master (mm)", value=297.0)
                 sheet_h_mm = st.number_input("Tinggi Lembar Master (mm)", value=410.0)
 
-        with c_gutter:
+            st.markdown("---")
             st.markdown("##### ✂️ Jarak Antar Objek & Margin")
             gap_x_mm = st.number_input("Jarak Horisontal / Potong (mm)", value=2.0, min_value=0.0, step=0.5)
             gap_y_mm = st.number_input("Jarak Vertikal / Potong (mm)", value=2.0, min_value=0.0, step=0.5)
@@ -115,55 +113,62 @@ if design_file and data_file:
     items_per_sheet = cols_count * rows_count
     total_pages = math.ceil(len(df) / items_per_sheet)
 
-    st.divider()
-
-    # ----------------------------------------------------
-    # 3. PREVIEW & GENERATE
-    # ----------------------------------------------------
-    st.subheader("3. Pratinjau Desain & Process Generate")
-    
-    col_prev, col_action = st.columns([1, 1])
-
-    with col_prev:
-        # Render Preview Single Card
+    # PANEL KANAN: LIVE PREVIEW
+    with col_preview:
+        st.markdown("##### 👁️ Live Preview Desain & Elemen")
+        
+        # Konversi skala pixel untuk rendering Pillow
         preview_scale = img_pixel_w / card_w_mm
         preview_img = base_img.copy().convert("RGB")
         draw = ImageDraw.Draw(preview_img)
         
-        # Draw Dummy QR
+        # 1. Render Preview QR Code
         dummy_qr_size_px = int(qr_size_mm * preview_scale)
         dummy_qr_x_px = int(qr_x_mm * preview_scale)
         dummy_qr_y_px = int(qr_y_mm * preview_scale)
         
         qr = qrcode.QRCode(box_size=5, border=1)
-        qr.add_data("SAMPLE-QR")
+        qr.add_data("PREVIEW-QR")
         qr.make(fit=True)
         qr_img_pil = qr.make_image(fill_color="black", back_color="white").resize((dummy_qr_size_px, dummy_qr_size_px))
         preview_img.paste(qr_img_pil, (dummy_qr_x_px, dummy_qr_y_px))
         
-        # Draw Dummy Numerator
+        # 2. Render Preview Numerator / Teks
         if enable_num:
             num_x_px = int(num_x_mm * preview_scale)
             num_y_px = int(num_y_mm * preview_scale)
-            font_size_px = int(num_font_size * preview_scale * 0.35)
-            try:
-                font = ImageFont.truetype("arial.ttf", font_size_px)
-            except:
+            
+            # Ambil sampel teks dari baris pertama data
+            sample_text = str(df[num_col].iloc[0]) if num_col in df.columns else "INV-001"
+            
+            # Konversi ukuran font pt ke pixel gambar
+            font_size_px = max(12, int(num_font_size * (preview_scale / MM2PT)))
+            
+            # Load Font TTF
+            font_loaded = False
+            for font_name in ["arial.ttf", "Arial.ttf", "DejaVuSans.ttf"]:
+                try:
+                    font = ImageFont.truetype(font_name, font_size_px)
+                    font_loaded = True
+                    break
+                except:
+                    pass
+            
+            if not font_loaded:
                 font = ImageFont.load_default()
-            draw.text((num_x_px, num_y_px), "INV-001", fill=num_font_color, font=font)
-        
-        st.image(preview_img, width=420, caption="Pratinjau Layout 1 Desain")
 
-    with col_action:
-        st.info(
-            f"📊 **Informasi Layout Master:**\n"
-            f"- Ukuran Lembar: **{sheet_w_mm} x {sheet_h_mm} mm**\n"
-            f"- Muat: **{cols_count} Kolom** × **{rows_count} Baris** = **{items_per_sheet} Kartu/Lembar**\n"
-            f"- Jarak Potong: **{gap_x_mm} mm (H)** / **{gap_y_mm} mm (V)**\n"
-            f"- Total Halaman PDF: **{total_pages} Lembar Master**"
-        )
+            draw.text((num_x_px, num_y_px), sample_text, fill=num_font_color, font=font)
         
-        st.write("")
+        st.image(preview_img, use_container_width=True, caption="Pratinjau Posisi Real-time")
+
+        st.info(
+            f"📊 **Kapasitas Lembar Master:**\n"
+            f"- Ukuran Lembar: **{sheet_w_mm} x {sheet_h_mm} mm**\n"
+            f"- Muat: **{cols_count} Kolom** × **{rows_count} Baris** = **{items_per_sheet} Kartu/Sheet**\n"
+            f"- Jarak Potong: **{gap_x_mm} mm (H)** / **{gap_y_mm} mm (V)**\n"
+            f"- Total PDF: **{total_pages} Lembar Master**"
+        )
+
         if st.button("🚀 Generate PDF Master (CorelDRAW Ready)", type="primary", use_container_width=True):
             with st.spinner("Memproses layout cetak masif... Mohon tunggu sebentar."):
                 pdf_buffer = io.BytesIO()
@@ -247,4 +252,4 @@ if design_file and data_file:
                     use_container_width=True
                 )
 else:
-    st.info(" Silakan upload **File Desain Template** dan **File Data CSV/Excel** di atas untuk mulai memproses.")
+    st.info("💡 Silakan upload **File Desain Template** dan **File Data CSV/Excel** di atas untuk mulai memproses.")
