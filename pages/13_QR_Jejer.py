@@ -12,52 +12,57 @@ from reportlab.pdfbase.ttfonts import TTFont
 
 MM2PT = 72.0 / 25.4 
 
-st.set_page_config(page_title="VDP & Layout Cetak Studio", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="VDP & Layout Cetak Studio", layout="wide")
 
-# CSS Compact agar padding & margin minim (Pas 1 Layar)
+# CSS Compact & Lock Height Preview agar 100% pas 1 layar
 st.markdown("""
     <style>
+    /* Hilangkan space kosong berlebih di paling atas halaman */
     .block-container {
         padding-top: 1rem !important;
         padding-bottom: 0rem !important;
         max-width: 98% !important;
     }
+    /* Kecilkan margin antar elemen input */
     .stNumberInput, .stSelectbox, .stSlider, .stRadio {
-        margin-bottom: -10px;
+        margin-bottom: -5px;
     }
+    /* Kunci tinggi pratinjau gambar agar tidak bikin halaman ketarik ke bawah */
     div[data-testid="stImage"] img {
-        max-height: 280px !important;
+        max-height: 240px !important;
         object-fit: contain;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# ----------------------------------------------------
-# SIDEBAR: UPLOAD FILE & INFORMASI RINGKAS
-# ----------------------------------------------------
-with st.sidebar:
-    st.title("🖨️ VDP Studio")
-    st.markdown("### 1. Upload File")
-    design_file = st.file_uploader("Template (PNG/JPG)", type=["png", "jpg", "jpeg"])
-    data_file = st.file_uploader("Data (CSV/Excel)", type=["csv", "xlsx"])
+st.caption("🖨️ **VDP Generator & Imposition Studio** — Single Screen View")
 
 # ----------------------------------------------------
-# MAIN DASHBOARD (1 LAYAR DASHBOARD)
+# 1. AREA UPLOAD FILE (DI MAIN PANEL - DUA KOLOM RINGKAS)
+# ----------------------------------------------------
+col_u1, col_u2 = st.columns(2)
+with col_u1:
+    design_file = st.file_uploader("1. Template Desain (PNG/JPG)", type=["png", "jpg", "jpeg"])
+with col_u2:
+    data_file = st.file_uploader("2. File Data (CSV/Excel)", type=["csv", "xlsx"])
+
+# ----------------------------------------------------
+# MAIN WORKSPACE (HANYA MUNCUL JIKA FILE TERUPLOAD)
 # ----------------------------------------------------
 if design_file and data_file:
     df = pd.read_csv(data_file) if data_file.name.endswith('.csv') else pd.read_excel(data_file)
     base_img = Image.open(design_file)
 
-    # ----------------------------------------------------
-    # TINGKAT 1: LIVE PREVIEW & RINGKASAN (PANEL ATAS)
-    # ----------------------------------------------------
+    st.markdown("---")
+
+    # Layout 2 Tingkat: Preview di Atas, Tabs Pengaturan di Bawah
     col_prev_img, col_prev_info = st.columns([1.2, 0.8])
 
-    # KITA BUTUH DUMMY INPUT DULU SEBELUM DITERAPKAN KE PREVIEW
-    # Didefinisikan lewat Session State atau Tab Pengaturan di Bawah
-    
     # ----------------------------------------------------
-    # TINGKAT 2: PENGATURAN COMPACT TABS (PANEL BAWAH)
+    # TABS PENGATURAN (PANEL BAWAH)
     # ----------------------------------------------------
     tab_dim, tab_qr, tab_num, tab_master = st.tabs([
         "📏 Ukuran & Orientasi", 
@@ -69,9 +74,9 @@ if design_file and data_file:
     with tab_dim:
         c1, c2, c3 = st.columns(3)
         with c1:
-            card_w_input = st.number_input("Lebar (mm)", min_value=10.0, value=90.0, step=1.0)
+            card_w_input = st.number_input("Lebar Kartu (mm)", min_value=10.0, value=90.0, step=1.0)
         with c2:
-            card_h_input = st.number_input("Tinggi (mm)", min_value=10.0, value=55.0, step=1.0)
+            card_h_input = st.number_input("Tinggi Kartu (mm)", min_value=10.0, value=55.0, step=1.0)
         with c3:
             orientation = st.radio("Orientasi", ["Landscape", "Portrait"], horizontal=True)
 
@@ -83,7 +88,7 @@ if design_file and data_file:
     with tab_qr:
         q1, q2, q3, q4 = st.columns(4)
         with q1:
-            qr_col = st.selectbox("Kolom QR:", df.columns, index=0)
+            qr_col = st.selectbox("Kolom Data QR:", df.columns, index=0)
         with q2:
             qr_size_mm = st.slider("Ukuran QR (mm)", 5.0, min(card_w_mm, card_h_mm), 20.0, step=0.5)
         with q3:
@@ -96,18 +101,18 @@ if design_file and data_file:
         if enable_num:
             n1, n2, n3, n4, n5 = st.columns([1, 1, 1, 1, 1])
             with n1:
-                num_col = st.selectbox("Kolom Data:", df.columns, index=min(1, len(df.columns)-1))
+                num_col = st.selectbox("Kolom Numerator:", df.columns, index=min(1, len(df.columns)-1))
             with n2:
-                font_option = st.selectbox("Font:", ["Helvetica-Bold", "Helvetica", "Courier-Bold", "Times-Bold", "Upload TTF"])
-                custom_font_file = st.file_uploader("File TTF", type=["ttf"]) if font_option == "Upload TTF" else None
+                font_option = st.selectbox("Jenis Font:", ["Helvetica-Bold", "Helvetica", "Courier-Bold", "Times-Bold", "Upload TTF"])
+                custom_font_file = st.file_uploader("Upload TTF", type=["ttf"]) if font_option == "Upload TTF" else None
             with n3:
                 num_font_size = st.slider("Ukuran (pt)", 6, 72, 14)
                 num_font_color = st.color_picker("Warna", "#000000")
             with n4:
-                num_align = st.radio("Alignment", ["Kiri", "Tengah", "Kanan"], horizontal=True)
+                num_align = st.radio("Alignment Teks", ["Kiri", "Tengah", "Kanan"], horizontal=True)
             with n5:
-                num_x_mm = st.slider("Posisi X (mm)", 0.0, card_w_mm, card_w_mm * 0.1, step=0.5)
-                num_y_mm = st.slider("Posisi Y (mm)", 0.0, card_h_mm, card_h_mm * 0.8, step=0.5)
+                num_x_mm = st.slider("Posisi X Teks (mm)", 0.0, card_w_mm, card_w_mm * 0.1, step=0.5)
+                num_y_mm = st.slider("Posisi Y Teks (mm)", 0.0, card_h_mm, card_h_mm * 0.8, step=0.5)
         else:
             num_col, font_option, custom_font_file = None, "Helvetica-Bold", None
             num_font_size, num_font_color, num_x_mm, num_y_mm, num_align = 14, "#000000", 0.0, 0.0, "Kiri"
@@ -115,25 +120,25 @@ if design_file and data_file:
     with tab_master:
         m1, m2, m3, m4 = st.columns(4)
         with m1:
-            preset = st.selectbox("Preset Lembar Master:", ["29.7 x 41.0 cm (Custom)", "A3 (297 x 420 mm)", "A4 (210 x 297 mm)", "Custom"])
+            preset = st.selectbox("Preset Ukuran Kertas Master:", ["29.7 x 41.0 cm (Custom)", "A3 (297 x 420 mm)", "A4 (210 x 297 mm)", "Custom"])
             sheet_w_mm = 297.0 if preset != "Custom" else st.number_input("Lebar Master (mm)", value=297.0)
             sheet_h_mm = 410.0 if "41.0" in preset else (420.0 if "A3" in preset else (297.0 if "A4" in preset else st.number_input("Tinggi Master (mm)", value=410.0)))
         with m2:
             gap_x_mm = st.number_input("Jarak H / Potong (mm)", value=2.0, min_value=0.0, step=0.5)
             gap_y_mm = st.number_input("Jarak V / Potong (mm)", value=2.0, min_value=0.0, step=0.5)
         with m3:
-            margin_left_mm = st.number_input("Margin Kiri (mm)", value=10.0, min_value=0.0, step=1.0)
-            margin_top_mm = st.number_input("Margin Atas (mm)", value=10.0, min_value=0.0, step=1.0)
+            margin_left_mm = st.number_input("Margin Kiri Kertas (mm)", value=10.0, min_value=0.0, step=1.0)
+            margin_top_mm = st.number_input("Margin Atas Kertas (mm)", value=10.0, min_value=0.0, step=1.0)
         with m4:
             usable_w, usable_h = sheet_w_mm - margin_left_mm, sheet_h_mm - margin_top_mm
             cols_count = max(1, math.floor((usable_w + gap_x_mm) / (card_w_mm + gap_x_mm)))
             rows_count = max(1, math.floor((usable_h + gap_y_mm) / (card_h_mm + gap_y_mm)))
             items_per_sheet = cols_count * rows_count
             total_pages = math.ceil(len(df) / items_per_sheet)
-            st.metric("Kapasitas Sheet", f"{items_per_sheet} Kartu/Sheet", f"Total: {total_pages} Hal")
+            st.metric("Kapasitas Cetak", f"{items_per_sheet} Kartu/Sheet", f"Total: {total_pages} Hal")
 
     # ----------------------------------------------------
-    # RENDER PREVIEW KE ATAS (SEKARANG SUDAH ADA INPUT DARI TAB)
+    # LIVE PREVIEW (UPDATE OTOMATIS SAAT TABS DIUBAH)
     # ----------------------------------------------------
     with col_prev_img:
         resized_base_img = base_img.copy().resize((int(card_w_mm * 10), int(card_h_mm * 10))).convert("RGB")
@@ -141,7 +146,7 @@ if design_file and data_file:
         preview_img = resized_base_img.copy()
         draw = ImageDraw.Draw(preview_img)
         
-        # QR Preview
+        # 1. Render QR Preview
         dummy_qr_size_px = int(qr_size_mm * preview_scale)
         qr = qrcode.QRCode(box_size=5, border=1)
         qr.add_data("PREVIEW")
@@ -149,7 +154,7 @@ if design_file and data_file:
         qr_img_pil = qr.make_image(fill_color="black", back_color="white").resize((dummy_qr_size_px, dummy_qr_size_px))
         preview_img.paste(qr_img_pil, (int(qr_x_mm * preview_scale), int(qr_y_mm * preview_scale)))
         
-        # Numerator Preview
+        # 2. Render Numerator Preview
         if enable_num:
             sample_text = str(df[num_col].iloc[0]) if num_col in df.columns else "INV-001"
             font_size_px = max(12, int(num_font_size * (preview_scale / MM2PT)))
@@ -174,7 +179,7 @@ if design_file and data_file:
         st.caption(f"📊 Layout Grid: **{cols_count} Kolom × {rows_count} Baris** ({items_per_sheet} pcs/sheet)")
         
         if st.button("🚀 Generate PDF Master HD", type="primary", use_container_width=True):
-            with st.spinner("Memproses layout PDF..."):
+            with st.spinner("Memproses layout PDF HD... Mohon tunggu..."):
                 pdf_buffer = io.BytesIO()
                 sheet_w_pt, sheet_h_pt = sheet_w_mm * MM2PT, sheet_h_mm * MM2PT
                 c = canvas.Canvas(pdf_buffer, pagesize=(sheet_w_pt, sheet_h_pt))
@@ -233,4 +238,4 @@ if design_file and data_file:
                 pdf_buffer.seek(0)
                 st.download_button("📥 Download PDF Master", data=pdf_buffer, file_name="Master_Cetak_VDP.pdf", mime="application/pdf", use_container_width=True)
 else:
-    st.info("💡 Upload file desain & data di **Sidebar (Kiri)** untuk mulai.")
+    st.info("💡 Silakan upload kedua file di atas untuk membuka workspace pratinjau & pengaturan layout.")
