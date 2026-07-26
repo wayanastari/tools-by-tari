@@ -75,7 +75,7 @@ if design_file and data_file:
             card_w_mm, card_h_mm = min(card_w_input, card_h_input), max(card_w_input, card_h_input)
 
     with tab_qr:
-        # --- INISIALISASI SESSION STATE UNTUK POSISI POSISI QR ---
+        # Inisialisasi nilai awal sekali saja
         if "qr_x_mm" not in st.session_state:
             st.session_state.qr_x_mm = card_w_mm * 0.65
         if "qr_y_mm" not in st.session_state:
@@ -87,17 +87,12 @@ if design_file and data_file:
         with q2:
             qr_size_mm = st.slider("Ukuran QR (mm)", 5.0, min(card_w_mm, card_h_mm), 20.0, step=0.5)
         
-        # Mencegah slider error jika batas max melebihi batas kartu saat ukuran QR membesar
-        max_x = max(0.0, card_w_mm - qr_size_mm)
-        max_y = max(0.0, card_h_mm - qr_size_mm)
-
-        # Melakukan clamp jika nilai posisi yang tersimpan kebetulan keluar dari batas baru
-        if st.session_state.qr_x_mm > max_x:
-            st.session_state.qr_x_mm = max_x
-        if st.session_state.qr_y_mm > max_y:
-            st.session_state.qr_y_mm = max_y
+        # Hitung batas maksimal slider tanpa mengganggu/menimpa isi st.session_state
+        max_x = max(0.5, card_w_mm - qr_size_mm)
+        max_y = max(0.5, card_h_mm - qr_size_mm)
 
         with q3:
+            # slider akan menggunakan nilai st.session_state.qr_x_mm dan TIDAK AKAN BERUBAH saat qr_size_mm digeser
             qr_x_mm = st.slider("Posisi X (mm)", 0.0, max_x, key="qr_x_mm", step=0.5)
         with q4:
             qr_y_mm = st.slider("Posisi Y (mm)", 0.0, max_y, key="qr_y_mm", step=0.5)
@@ -105,7 +100,6 @@ if design_file and data_file:
     with tab_num:
         enable_num = st.checkbox("Aktifkan Numerator", value=True)
         if enable_num:
-            # Sama seperti QR, kita juga amankan session_state untuk Numerator
             if "num_x_mm" not in st.session_state:
                 st.session_state.num_x_mm = card_w_mm * 0.1
             if "num_y_mm" not in st.session_state:
