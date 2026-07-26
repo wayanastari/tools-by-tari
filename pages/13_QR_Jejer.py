@@ -4,27 +4,49 @@ import qrcode
 from PIL import Image, ImageDraw, ImageFont
 import io
 import math
+import os
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 from reportlab.lib.colors import HexColor
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 MM2PT = 72.0 / 25.4 
 
 st.set_page_config(page_title="VDP & Layout Cetak Studio", layout="wide")
 
-# CSS khusus agar panel preview (sebelah kanan) tetap melayang (sticky) saat panel kiri di-scroll
+# CSS INJECTION UNTUK MEMASTIKAN PREVIEW BENAR-BENAR STICKY / FIXED
 st.markdown("""
     <style>
-    [data-testid="column"]:nth-child(2) {
-        position: sticky;
-        top: 2rem;
-        align-self: flex-start;
+    /* Menghilangkan batasan overflow pada parent container Streamlit */
+    [data-testid="stAppViewBlockContainer"] {
+        overflow: visible !important;
+    }
+    .main .block-container {
+        overflow: visible !important;
+    }
+    
+    /* Paksa kolom kanan (kolom 2) agar melayang saat di-scroll */
+    div[data-testid="column"]:nth-child(2) {
+        position: -webkit-sticky !important;
+        position: sticky !important;
+        top: 2rem !important;
+        align-self: flex-start !important;
+        z-index: 99 !important;
+    }
+
+    /* Styling box preview agar lebih rapi */
+    .preview-box {
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid #e0e0e0;
     }
     </style>
 """, unsafe_allow_html=True)
 
 st.title("🖨️ VDP Generator & Imposition Studio")
-st.caption("Aplikasi Variable Data Printing dengan QR Code, Numerator, dan Layout Cetak Massal (PDF / Corel-Ready)")
+st.caption("Aplikasi Variable Data Printing - Presisi Cetak Tinggi & Sticky Preview Fixed")
 
 st.divider()
 
@@ -49,11 +71,11 @@ if design_file and data_file:
     base_img = Image.open(design_file)
     img_pixel_w, img_pixel_h = base_img.size
 
-    st.success(f"File terdeteksi! Total Data: **{len(df)} baris**. Resolusi Gambar Original: **{img_pixel_w}x{img_pixel_h} px**.")
+    st.success(f"File terdeteksi! Total Data: **{len(df)} baris**. Resolusi Desain: **{img_pixel_w}x{img_pixel_h} px**.")
     st.divider()
 
     # ----------------------------------------------------
-    # 2. LAYOUT UTAMA: PENGATURAN (KIRI) vs STICKY PREVIEW (KANAN)
+    # 2. PENGATURAN (KIRI) vs STICKY PREVIEW (KANAN)
     # ----------------------------------------------------
     st.subheader("2. Pengaturan Desain & Live Preview")
     
@@ -74,7 +96,6 @@ if design_file and data_file:
             with c_dim3:
                 orientation = st.radio("Orientasi Kartu", ["Landscape", "Portrait"], horizontal=True)
 
-            # Penyesuaian Orientasi Kartu
             if orientation == "Landscape":
                 card_w_mm = max(card_w_input, card_h_input)
                 card_h_mm = min(card_w_input, card_h_input)
@@ -92,10 +113,19 @@ if design_file and data_file:
             qr_y_mm = st.slider("Posisi QR - Y dari Atas (mm)", 0.0, card_h_mm - qr_size_mm, card_h_mm * 0.5, step=0.5)
 
             st.markdown("---")
-            st.markdown("##### 🔢 Setting Numerator / Teks")
+            st.markdown("##### 🔢 Setting Numerator & Custom Font")
             enable_num = st.checkbox("Aktifkan Numerator", value=True)
             if enable_num:
                 num_col = st.selectbox("Kolom Data untuk Numerator:", df.columns, index=min(1, len(df.columns)-1))
+                
+                c_font1, c_font2 = st.columns(2)
+                with c_font1:
+                    font_option = st.selectbox("Pilih Jenis Font:", ["Helvetica-Bold", "Helvetica", "Courier-Bold", "Times-Bold", "Upload Custom TTF"])
+                with c_font2:
+                    custom_font_file = None
+                    if font_option == "Upload Custom TTF":
+                        custom_font_file = st.file_uploader("Upload Font (.ttf)", type=["ttf"])
+
                 c_num1, c_num2 = st.columns(2)
                 with c_num1:
                     num_font_size = st.slider("Ukuran Font (pt)", 6, 72, 14)
@@ -107,6 +137,7 @@ if design_file and data_file:
                 num_y_mm = st.slider("Posisi Teks - Y dari Atas (mm)", 0.0, card_h_mm, card_h_mm * 0.8, step=0.5)
             else:
                 num_col = None
+                font_option, custom_font_file = "Helvetica-Bold", None
                 num_font_size, num_font_color, num_x_mm, num_y_mm, num_align = 14, "#000000", 0.0, 0.0, "Kiri"
 
         # TAB 2: LEMBAR MASTER & GUTTER
@@ -138,13 +169,13 @@ if design_file and data_file:
     items_per_sheet = cols_count * rows_count
     total_pages = math.ceil(len(df) / items_per_sheet)
 
-    # PANEL KANAN: LIVE PREVIEW (MELAYANG/STICKY)
+    # PANEL KANAN: LIVE PREVIEW (MELAYANG TERUS SAAT SCROLL)
     with col_preview:
         st.markdown("##### 👁️ Live Preview Real-time")
         
-        # Resize base image ke dimensi fisik mm yang ditentukan
+        # Rendition gambar preview
         resized_base_img = base_img.copy().resize((int(card_w_mm * 10), int(card_h_mm * 10))).convert("RGB")
-        preview_scale = (card_w_mm * 10) / card_w_mm # 10 px per mm
+        preview_scale = (card_w_mm * 10) / card_w_mm
         
         preview_img = resized_base_img.copy()
         draw = ImageDraw.Draw(preview_img)
@@ -160,7 +191,7 @@ if design_file and data_file:
         qr_img_pil = qr.make_image(fill_color="black", back_color="white").resize((dummy_qr_size_px, dummy_qr_size_px))
         preview_img.paste(qr_img_pil, (dummy_qr_x_px, dummy_qr_y_px))
         
-        # 2. Render Numerator / Teks Real-time
+        # 2. Render Numerator Real-time
         if enable_num:
             num_x_px = int(num_x_mm * preview_scale)
             num_y_px = int(num_y_mm * preview_scale)
@@ -168,19 +199,20 @@ if design_file and data_file:
             sample_text = str(df[num_col].iloc[0]) if num_col in df.columns else "INV-001"
             font_size_px = max(12, int(num_font_size * (preview_scale / MM2PT)))
             
-            font_loaded = False
-            for font_name in ["arial.ttf", "Arial.ttf", "DejaVuSans.ttf"]:
+            font_to_use = ImageFont.load_default()
+            if font_option == "Upload Custom TTF" and custom_font_file is not None:
                 try:
-                    font = ImageFont.truetype(font_name, font_size_px)
-                    font_loaded = True
-                    break
+                    font_to_use = ImageFont.truetype(custom_font_file, font_size_px)
                 except:
                     pass
-            
-            if not font_loaded:
-                font = ImageFont.load_default()
+            else:
+                for font_name in ["arial.ttf", "Arial.ttf", "DejaVuSans.ttf"]:
+                    try:
+                        font_to_use = ImageFont.truetype(font_name, font_size_px)
+                        break
+                    except:
+                        pass
 
-            # Align Text handling
             if num_align == "Tengah":
                 anchor = "ms"
             elif num_align == "Kanan":
@@ -189,41 +221,46 @@ if design_file and data_file:
                 anchor = "ls"
 
             try:
-                draw.text((num_x_px, num_y_px), sample_text, fill=num_font_color, font=font, anchor=anchor)
+                draw.text((num_x_px, num_y_px), sample_text, fill=num_font_color, font=font_to_use, anchor=anchor)
             except:
-                draw.text((num_x_px, num_y_px), sample_text, fill=num_font_color, font=font)
+                draw.text((num_x_px, num_y_px), sample_text, fill=num_font_color, font=font_to_use)
         
+        # Tampilan Gambar & Ringkasan Cetak
         st.image(preview_img, use_container_width=True, caption=f"Pratinjau ({card_w_mm} x {card_h_mm} mm)")
 
         st.info(
             f"📊 **Kapasitas Lembar Master:**\n"
-            f"- Ukuran Lembar: **{sheet_w_mm} x {sheet_h_mm} mm**\n"
-            f"- Muat: **{cols_count} Kolom** × **{rows_count} Baris** = **{items_per_sheet} Kartu/Sheet**\n"
+            f"- Lembar: **{sheet_w_mm} x {sheet_h_mm} mm** | Muat: **{items_per_sheet} Kartu/Sheet**\n"
             f"- Total PDF: **{total_pages} Lembar Master**"
         )
 
         if st.button("🚀 Generate PDF Master (CorelDRAW Ready)", type="primary", use_container_width=True):
-            with st.spinner("Memproses layout cetak masif... Mohon tunggu sebentar."):
+            with st.spinner("Memproses layout cetak HD... Mohon tunggu sebentar."):
                 pdf_buffer = io.BytesIO()
-                
-                sheet_w_pt = sheet_w_mm * MM2PT
-                sheet_h_pt = sheet_h_mm * MM2PT
-                
+                sheet_w_pt, sheet_h_pt = sheet_w_mm * MM2PT, sheet_h_mm * MM2PT
                 c = canvas.Canvas(pdf_buffer, pagesize=(sheet_w_pt, sheet_h_pt))
                 
-                card_w_pt = card_w_mm * MM2PT
-                card_h_pt = card_h_mm * MM2PT
-                gap_x_pt = gap_x_mm * MM2PT
-                gap_y_pt = gap_y_mm * MM2PT
-                margin_left_pt = margin_left_mm * MM2PT
-                margin_top_pt = margin_top_mm * MM2PT
-                
-                qr_size_pt = qr_size_mm * MM2PT
-                qr_x_pt = qr_x_mm * MM2PT
-                qr_y_pt = qr_y_mm * MM2PT
+                active_font_name = "Helvetica-Bold"
+                if enable_num:
+                    if font_option == "Upload Custom TTF" and custom_font_file is not None:
+                        try:
+                            custom_font_file.seek(0)
+                            temp_font_path = "temp_user_font.ttf"
+                            with open(temp_font_path, "wb") as f:
+                                f.write(custom_font_file.read())
+                            pdfmetrics.registerFont(TTFont('CustomFont', temp_font_path))
+                            active_font_name = 'CustomFont'
+                        except Exception as e:
+                            active_font_name = "Helvetica-Bold"
+                    else:
+                        active_font_name = font_option
 
-                num_x_pt = num_x_mm * MM2PT
-                num_y_pt = num_y_mm * MM2PT
+                card_w_pt, card_h_pt = card_w_mm * MM2PT, card_h_mm * MM2PT
+                gap_x_pt, gap_y_pt = gap_x_mm * MM2PT, gap_y_mm * MM2PT
+                margin_left_pt, margin_top_pt = margin_left_mm * MM2PT, margin_top_mm * MM2PT
+                
+                qr_size_pt, qr_x_pt, qr_y_pt = qr_size_mm * MM2PT, qr_x_mm * MM2PT, qr_y_mm * MM2PT
+                num_x_pt, num_y_pt = num_x_mm * MM2PT, num_y_mm * MM2PT
 
                 item_idx = 0
                 total_items = len(df)
@@ -242,7 +279,7 @@ if design_file and data_file:
                             card_top_from_top_pt = margin_top_pt + r * (card_h_pt + gap_y_pt)
                             card_bottom_pt = sheet_h_pt - card_top_from_top_pt - card_h_pt
                             
-                            # 1. Gambar Background
+                            # 1. Gambar Background HD
                             design_file.seek(0)
                             c.drawImage(ImageReader(design_file), card_left_pt, card_bottom_pt, width=card_w_pt, height=card_h_pt)
                             
@@ -263,7 +300,7 @@ if design_file and data_file:
                             
                             # 3. Gambar Numerator
                             if enable_num:
-                                c.setFont("Helvetica-Bold", num_font_size)
+                                c.setFont(active_font_name, num_font_size)
                                 c.setFillColor(HexColor(num_font_color))
                                 actual_num_x_pt = card_left_pt + num_x_pt
                                 actual_num_y_pt = card_bottom_pt + card_h_pt - num_y_pt - (num_font_size * 0.8)
@@ -283,9 +320,9 @@ if design_file and data_file:
                 pdf_buffer.seek(0)
                 
                 st.download_button(
-                    label="📥 Download Hasil PDF Master",
+                    label="📥 Download Hasil PDF Master HD",
                     data=pdf_buffer,
-                    file_name="Master_Cetak_VDP.pdf",
+                    file_name="Master_Cetak_VDP_HD.pdf",
                     mime="application/pdf",
                     use_container_width=True
                 )
