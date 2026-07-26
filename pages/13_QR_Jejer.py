@@ -63,19 +63,19 @@ if design_file and data_file:
     with tab_dim:
         c1, c2, c3 = st.columns(3)
         with c1:
-            card_w_input = st.number_input("Lebar Kartu (mm)", min_value=10.0, value=90.0, step=1.0)
+            card_w_cm = st.number_input("Lebar Kartu (cm)", min_value=1.0, value=9.0, step=0.1)
         with c2:
-            card_h_input = st.number_input("Tinggi Kartu (mm)", min_value=10.0, value=55.0, step=1.0)
+            card_h_cm = st.number_input("Tinggi Kartu (cm)", min_value=1.0, value=5.5, step=0.1)
         with c3:
             orientation = st.radio("Orientasi", ["Landscape", "Portrait"], horizontal=True)
 
+        # Konversi CM ke MM internal
         if orientation == "Landscape":
-            card_w_mm, card_h_mm = max(card_w_input, card_h_input), min(card_w_input, card_h_input)
+            card_w_mm, card_h_mm = max(card_w_cm, card_h_cm) * 10.0, min(card_w_cm, card_h_cm) * 10.0
         else:
-            card_w_mm, card_h_mm = min(card_w_input, card_h_input), max(card_w_input, card_h_input)
+            card_w_mm, card_h_mm = min(card_w_cm, card_h_cm) * 10.0, max(card_w_cm, card_h_cm) * 10.0
 
     with tab_qr:
-        # Inisialisasi nilai awal sekali saja
         if "qr_x_mm" not in st.session_state:
             st.session_state.qr_x_mm = float(round(card_w_mm * 0.65, 1))
         if "qr_y_mm" not in st.session_state:
@@ -86,9 +86,6 @@ if design_file and data_file:
             qr_col = st.selectbox("Kolom Data QR:", df.columns, index=0)
         with q2:
             qr_size_mm = st.slider("Ukuran QR (mm)", 5.0, min(card_w_mm, card_h_mm), 20.0, step=0.5)
-        
-        # PERBAIKAN UTAMA: Max value slider dikunci ke ukuran kartu penuh (card_w_mm & card_h_mm)
-        # Dengan begini range slider TIDAK BERUBAH saat qr_size_mm digeser, sehingga nilai X dan Y TIDAK DI-RESET ke 0
         with q3:
             qr_x_mm = st.slider("Posisi X (mm)", 0.0, float(card_w_mm), key="qr_x_mm", step=0.5)
         with q4:
@@ -102,12 +99,13 @@ if design_file and data_file:
             if "num_y_mm" not in st.session_state:
                 st.session_state.num_y_mm = float(round(card_h_mm * 0.8, 1))
 
-            n1, n2, n3, n4, n5 = st.columns([1, 1, 1, 1, 1])
+            n1, n2, n3, n4, n5 = st.columns([1, 1.2, 1, 1, 1])
             with n1:
                 num_col = st.selectbox("Kolom Numerator:", df.columns, index=min(1, len(df.columns)-1))
             with n2:
-                font_option = st.selectbox("Jenis Font:", ["Helvetica-Bold", "Helvetica", "Courier-Bold", "Times-Bold", "Upload TTF"])
-                custom_font_file = st.file_uploader("Upload TTF", type=["ttf"]) if font_option == "Upload TTF" else None
+                font_family = st.selectbox("Jenis Font:", ["Helvetica", "Times-Roman", "Courier", "Upload TTF"])
+                font_style = st.selectbox("Style Font:", ["Normal", "Bold", "Italic", "Bold Italic"])
+                custom_font_file = st.file_uploader("Upload TTF", type=["ttf"]) if font_family == "Upload TTF" else None
             with n3:
                 num_font_size = st.slider("Ukuran (pt)", 6, 72, 14)
                 num_font_color = st.color_picker("Warna", "#000000")
@@ -116,14 +114,27 @@ if design_file and data_file:
             with n5:
                 num_x_mm = st.slider("Posisi X Teks (mm)", 0.0, float(card_w_mm), key="num_x_mm", step=0.5)
                 num_y_mm = st.slider("Posisi Y Teks (mm)", 0.0, float(card_h_mm), key="num_y_mm", step=0.5)
+
+            # Map Font Name untuk ReportLab
+            if font_family != "Upload TTF":
+                style_map = {
+                    "Normal": "",
+                    "Bold": "-Bold",
+                    "Italic": "-Oblique" if font_family == "Helvetica" else "-Italic",
+                    "Bold Italic": "-BoldOblique" if font_family == "Helvetica" else "-BoldItalic"
+                }
+                active_pdf_font = f"{font_family}{style_map[font_style]}"
+            else:
+                active_pdf_font = "CustomFont"
         else:
-            num_col, font_option, custom_font_file = None, "Helvetica-Bold", None
+            num_col, font_family, font_style, custom_font_file = None, "Helvetica", "Normal", None
             num_font_size, num_font_color, num_x_mm, num_y_mm, num_align = 14, "#000000", 0.0, 0.0, "Kiri"
+            active_pdf_font = "Helvetica"
 
     with tab_master:
         m1, m2, m3, m4 = st.columns(4)
         with m1:
-            preset = st.selectbox("Preset Ukuran Kertas Master:", ["29.7 x 41.0 cm (Custom)", "A3 (297 x 420 mm)", "A4 (210 x 297 mm)", "Custom"])
+            preset = st.selectbox("Preset Ukuran Kertas Master:", ["29.7 x 41.0 cm (Custom)", "A3 (29.7 x 42.0 cm)", "A4 (21.0 x 29.7 cm)", "Custom"])
             sheet_w_mm = 297.0 if preset != "Custom" else st.number_input("Lebar Master (mm)", value=297.0)
             sheet_h_mm = 410.0 if "41.0" in preset else (420.0 if "A3" in preset else (297.0 if "A4" in preset else st.number_input("Tinggi Master (mm)", value=410.0)))
         with m2:
@@ -147,7 +158,6 @@ if design_file and data_file:
         preview_img = resized_base_img.copy()
         draw = ImageDraw.Draw(preview_img)
         
-        # Safe Clamp untuk koordinat rendering agar tidak terpotong tepi jika X/Y terlalu dekat ke ujung kanan/bawah
         safe_qr_x = min(qr_x_mm, card_w_mm - qr_size_mm)
         safe_qr_y = min(qr_y_mm, card_h_mm - qr_size_mm)
 
@@ -165,11 +175,18 @@ if design_file and data_file:
             font_size_px = max(12, int(num_font_size * (preview_scale / MM2PT)))
             
             font_to_use = ImageFont.load_default()
-            if font_option == "Upload TTF" and custom_font_file:
+            if font_family == "Upload TTF" and custom_font_file:
                 try: font_to_use = ImageFont.truetype(custom_font_file, font_size_px)
                 except: pass
             else:
-                for font_name in ["arial.ttf", "Arial.ttf", "DejaVuSans.ttf"]:
+                # Menyiapkan fallback font PIL berdasarkan style pilihan
+                font_candidates = []
+                if "Bold" in font_style and "Italic" in font_style: font_candidates = ["arialbi.ttf", "DejaVuSans-BoldOblique.ttf"]
+                elif "Bold" in font_style: font_candidates = ["arialbd.ttf", "DejaVuSans-Bold.ttf"]
+                elif "Italic" in font_style: font_candidates = ["ariali.ttf", "DejaVuSans-Oblique.ttf"]
+                else: font_candidates = ["arial.ttf", "DejaVuSans.ttf"]
+
+                for font_name in font_candidates:
                     try: font_to_use = ImageFont.truetype(font_name, font_size_px); break
                     except: pass
 
@@ -180,7 +197,7 @@ if design_file and data_file:
         st.image(preview_img, use_container_width=True)
 
     with col_prev_info:
-        st.caption(f"📐 Desain: **{card_w_mm} x {card_h_mm} mm** | Master: **{sheet_w_mm} x {sheet_h_mm} mm**")
+        st.caption(f"📐 Desain: **{card_w_cm} x {card_h_cm} cm** ({card_w_mm} x {card_h_mm} mm) | Master: **{sheet_w_mm/10} x {sheet_h_mm/10} cm**")
         st.caption(f"📊 Layout Grid: **{cols_count} Kolom × {rows_count} Baris** ({items_per_sheet} pcs/sheet)")
         
         if st.button("🚀 Generate PDF Master HD", type="primary", use_container_width=True):
@@ -189,17 +206,15 @@ if design_file and data_file:
                 sheet_w_pt, sheet_h_pt = sheet_w_mm * MM2PT, sheet_h_mm * MM2PT
                 c = canvas.Canvas(pdf_buffer, pagesize=(sheet_w_pt, sheet_h_pt))
                 
-                active_font_name = "Helvetica-Bold"
                 if enable_num:
-                    if font_option == "Upload TTF" and custom_font_file:
+                    if font_family == "Upload TTF" and custom_font_file:
                         try:
                             custom_font_file.seek(0)
                             temp_font_path = "temp_user_font.ttf"
                             with open(temp_font_path, "wb") as f: f.write(custom_font_file.read())
                             pdfmetrics.registerFont(TTFont('CustomFont', temp_font_path))
-                            active_font_name = 'CustomFont'
-                        except: active_font_name = "Helvetica-Bold"
-                    else: active_font_name = font_option
+                            active_pdf_font = 'CustomFont'
+                        except: active_pdf_font = "Helvetica-Bold"
 
                 card_w_pt, card_h_pt = card_w_mm * MM2PT, card_h_mm * MM2PT
                 gap_x_pt, gap_y_pt = gap_x_mm * MM2PT, gap_y_mm * MM2PT
@@ -230,7 +245,7 @@ if design_file and data_file:
                             c.drawImage(ImageReader(qr_mem), card_left_pt + qr_x_pt, card_bottom_pt + card_h_pt - qr_y_pt - qr_size_pt, width=qr_size_pt, height=qr_size_pt)
                             
                             if enable_num:
-                                c.setFont(active_font_name, num_font_size)
+                                c.setFont(active_pdf_font, num_font_size)
                                 c.setFillColor(HexColor(num_font_color))
                                 actual_num_x_pt = card_left_pt + num_x_pt
                                 actual_num_y_pt = card_bottom_pt + card_h_pt - num_y_pt - (num_font_size * 0.8)
