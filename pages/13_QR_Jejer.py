@@ -14,20 +14,17 @@ MM2PT = 72.0 / 25.4
 
 st.set_page_config(page_title="VDP & Layout Cetak Studio", layout="wide")
 
-# CSS Compact & Lock Height Preview agar 100% pas 1 layar
+# CSS Compact & Lock Height Preview
 st.markdown("""
     <style>
-    /* Hilangkan space kosong berlebih di paling atas halaman */
     .block-container {
         padding-top: 1rem !important;
         padding-bottom: 0rem !important;
         max-width: 98% !important;
     }
-    /* Kecilkan margin antar elemen input */
     .stNumberInput, .stSelectbox, .stSlider, .stRadio {
         margin-bottom: -5px;
     }
-    /* Kunci tinggi pratinjau gambar agar tidak bikin halaman ketarik ke bawah */
     div[data-testid="stImage"] img {
         max-height: 240px !important;
         object-fit: contain;
@@ -40,30 +37,22 @@ st.markdown("""
 
 st.caption("🖨️ **VDP Generator & Imposition Studio** — Single Screen View")
 
-# ----------------------------------------------------
-# 1. AREA UPLOAD FILE (DI MAIN PANEL - DUA KOLOM RINGKAS)
-# ----------------------------------------------------
+# 1. AREA UPLOAD FILE
 col_u1, col_u2 = st.columns(2)
 with col_u1:
     design_file = st.file_uploader("1. Template Desain (PNG/JPG)", type=["png", "jpg", "jpeg"])
 with col_u2:
     data_file = st.file_uploader("2. File Data (CSV/Excel)", type=["csv", "xlsx"])
 
-# ----------------------------------------------------
-# MAIN WORKSPACE (HANYA MUNCUL JIKA FILE TERUPLOAD)
-# ----------------------------------------------------
 if design_file and data_file:
     df = pd.read_csv(data_file) if data_file.name.endswith('.csv') else pd.read_excel(data_file)
     base_img = Image.open(design_file)
 
     st.markdown("---")
 
-    # Layout 2 Tingkat: Preview di Atas, Tabs Pengaturan di Bawah
     col_prev_img, col_prev_info = st.columns([1.2, 0.8])
 
-    # ----------------------------------------------------
-    # TABS PENGATURAN (PANEL BAWAH)
-    # ----------------------------------------------------
+    # TABS PENGATURAN
     tab_dim, tab_qr, tab_num, tab_master = st.tabs([
         "📏 Ukuran & Orientasi", 
         "📲 Setting QR", 
@@ -86,19 +75,42 @@ if design_file and data_file:
             card_w_mm, card_h_mm = min(card_w_input, card_h_input), max(card_w_input, card_h_input)
 
     with tab_qr:
+        # --- INISIALISASI SESSION STATE UNTUK POSISI POSISI QR ---
+        if "qr_x_mm" not in st.session_state:
+            st.session_state.qr_x_mm = card_w_mm * 0.65
+        if "qr_y_mm" not in st.session_state:
+            st.session_state.qr_y_mm = card_h_mm * 0.5
+
         q1, q2, q3, q4 = st.columns(4)
         with q1:
             qr_col = st.selectbox("Kolom Data QR:", df.columns, index=0)
         with q2:
             qr_size_mm = st.slider("Ukuran QR (mm)", 5.0, min(card_w_mm, card_h_mm), 20.0, step=0.5)
+        
+        # Mencegah slider error jika batas max melebihi batas kartu saat ukuran QR membesar
+        max_x = max(0.0, card_w_mm - qr_size_mm)
+        max_y = max(0.0, card_h_mm - qr_size_mm)
+
+        # Melakukan clamp jika nilai posisi yang tersimpan kebetulan keluar dari batas baru
+        if st.session_state.qr_x_mm > max_x:
+            st.session_state.qr_x_mm = max_x
+        if st.session_state.qr_y_mm > max_y:
+            st.session_state.qr_y_mm = max_y
+
         with q3:
-            qr_x_mm = st.slider("Posisi X (mm)", 0.0, card_w_mm - qr_size_mm, card_w_mm * 0.65, step=0.5)
+            qr_x_mm = st.slider("Posisi X (mm)", 0.0, max_x, key="qr_x_mm", step=0.5)
         with q4:
-            qr_y_mm = st.slider("Posisi Y (mm)", 0.0, card_h_mm - qr_size_mm, card_h_mm * 0.5, step=0.5)
+            qr_y_mm = st.slider("Posisi Y (mm)", 0.0, max_y, key="qr_y_mm", step=0.5)
 
     with tab_num:
         enable_num = st.checkbox("Aktifkan Numerator", value=True)
         if enable_num:
+            # Sama seperti QR, kita juga amankan session_state untuk Numerator
+            if "num_x_mm" not in st.session_state:
+                st.session_state.num_x_mm = card_w_mm * 0.1
+            if "num_y_mm" not in st.session_state:
+                st.session_state.num_y_mm = card_h_mm * 0.8
+
             n1, n2, n3, n4, n5 = st.columns([1, 1, 1, 1, 1])
             with n1:
                 num_col = st.selectbox("Kolom Numerator:", df.columns, index=min(1, len(df.columns)-1))
@@ -111,8 +123,8 @@ if design_file and data_file:
             with n4:
                 num_align = st.radio("Alignment Teks", ["Kiri", "Tengah", "Kanan"], horizontal=True)
             with n5:
-                num_x_mm = st.slider("Posisi X Teks (mm)", 0.0, card_w_mm, card_w_mm * 0.1, step=0.5)
-                num_y_mm = st.slider("Posisi Y Teks (mm)", 0.0, card_h_mm, card_h_mm * 0.8, step=0.5)
+                num_x_mm = st.slider("Posisi X Teks (mm)", 0.0, card_w_mm, key="num_x_mm", step=0.5)
+                num_y_mm = st.slider("Posisi Y Teks (mm)", 0.0, card_h_mm, key="num_y_mm", step=0.5)
         else:
             num_col, font_option, custom_font_file = None, "Helvetica-Bold", None
             num_font_size, num_font_color, num_x_mm, num_y_mm, num_align = 14, "#000000", 0.0, 0.0, "Kiri"
@@ -137,16 +149,14 @@ if design_file and data_file:
             total_pages = math.ceil(len(df) / items_per_sheet)
             st.metric("Kapasitas Cetak", f"{items_per_sheet} Kartu/Sheet", f"Total: {total_pages} Hal")
 
-    # ----------------------------------------------------
-    # LIVE PREVIEW (UPDATE OTOMATIS SAAT TABS DIUBAH)
-    # ----------------------------------------------------
+    # LIVE PREVIEW
     with col_prev_img:
         resized_base_img = base_img.copy().resize((int(card_w_mm * 10), int(card_h_mm * 10))).convert("RGB")
         preview_scale = (card_w_mm * 10) / card_w_mm
         preview_img = resized_base_img.copy()
         draw = ImageDraw.Draw(preview_img)
         
-        # 1. Render QR Preview
+        # QR Preview
         dummy_qr_size_px = int(qr_size_mm * preview_scale)
         qr = qrcode.QRCode(box_size=5, border=1)
         qr.add_data("PREVIEW")
@@ -154,7 +164,7 @@ if design_file and data_file:
         qr_img_pil = qr.make_image(fill_color="black", back_color="white").resize((dummy_qr_size_px, dummy_qr_size_px))
         preview_img.paste(qr_img_pil, (int(qr_x_mm * preview_scale), int(qr_y_mm * preview_scale)))
         
-        # 2. Render Numerator Preview
+        # Numerator Preview
         if enable_num:
             sample_text = str(df[num_col].iloc[0]) if num_col in df.columns else "INV-001"
             font_size_px = max(12, int(num_font_size * (preview_scale / MM2PT)))
