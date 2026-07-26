@@ -77,9 +77,9 @@ if design_file and data_file:
     with tab_qr:
         # Inisialisasi nilai awal sekali saja
         if "qr_x_mm" not in st.session_state:
-            st.session_state.qr_x_mm = card_w_mm * 0.65
+            st.session_state.qr_x_mm = float(round(card_w_mm * 0.65, 1))
         if "qr_y_mm" not in st.session_state:
-            st.session_state.qr_y_mm = card_h_mm * 0.5
+            st.session_state.qr_y_mm = float(round(card_h_mm * 0.5, 1))
 
         q1, q2, q3, q4 = st.columns(4)
         with q1:
@@ -87,23 +87,20 @@ if design_file and data_file:
         with q2:
             qr_size_mm = st.slider("Ukuran QR (mm)", 5.0, min(card_w_mm, card_h_mm), 20.0, step=0.5)
         
-        # Hitung batas maksimal slider tanpa mengganggu/menimpa isi st.session_state
-        max_x = max(0.5, card_w_mm - qr_size_mm)
-        max_y = max(0.5, card_h_mm - qr_size_mm)
-
+        # PERBAIKAN UTAMA: Max value slider dikunci ke ukuran kartu penuh (card_w_mm & card_h_mm)
+        # Dengan begini range slider TIDAK BERUBAH saat qr_size_mm digeser, sehingga nilai X dan Y TIDAK DI-RESET ke 0
         with q3:
-            # slider akan menggunakan nilai st.session_state.qr_x_mm dan TIDAK AKAN BERUBAH saat qr_size_mm digeser
-            qr_x_mm = st.slider("Posisi X (mm)", 0.0, max_x, key="qr_x_mm", step=0.5)
+            qr_x_mm = st.slider("Posisi X (mm)", 0.0, float(card_w_mm), key="qr_x_mm", step=0.5)
         with q4:
-            qr_y_mm = st.slider("Posisi Y (mm)", 0.0, max_y, key="qr_y_mm", step=0.5)
+            qr_y_mm = st.slider("Posisi Y (mm)", 0.0, float(card_h_mm), key="qr_y_mm", step=0.5)
 
     with tab_num:
         enable_num = st.checkbox("Aktifkan Numerator", value=True)
         if enable_num:
             if "num_x_mm" not in st.session_state:
-                st.session_state.num_x_mm = card_w_mm * 0.1
+                st.session_state.num_x_mm = float(round(card_w_mm * 0.1, 1))
             if "num_y_mm" not in st.session_state:
-                st.session_state.num_y_mm = card_h_mm * 0.8
+                st.session_state.num_y_mm = float(round(card_h_mm * 0.8, 1))
 
             n1, n2, n3, n4, n5 = st.columns([1, 1, 1, 1, 1])
             with n1:
@@ -117,8 +114,8 @@ if design_file and data_file:
             with n4:
                 num_align = st.radio("Alignment Teks", ["Kiri", "Tengah", "Kanan"], horizontal=True)
             with n5:
-                num_x_mm = st.slider("Posisi X Teks (mm)", 0.0, card_w_mm, key="num_x_mm", step=0.5)
-                num_y_mm = st.slider("Posisi Y Teks (mm)", 0.0, card_h_mm, key="num_y_mm", step=0.5)
+                num_x_mm = st.slider("Posisi X Teks (mm)", 0.0, float(card_w_mm), key="num_x_mm", step=0.5)
+                num_y_mm = st.slider("Posisi Y Teks (mm)", 0.0, float(card_h_mm), key="num_y_mm", step=0.5)
         else:
             num_col, font_option, custom_font_file = None, "Helvetica-Bold", None
             num_font_size, num_font_color, num_x_mm, num_y_mm, num_align = 14, "#000000", 0.0, 0.0, "Kiri"
@@ -150,13 +147,17 @@ if design_file and data_file:
         preview_img = resized_base_img.copy()
         draw = ImageDraw.Draw(preview_img)
         
+        # Safe Clamp untuk koordinat rendering agar tidak terpotong tepi jika X/Y terlalu dekat ke ujung kanan/bawah
+        safe_qr_x = min(qr_x_mm, card_w_mm - qr_size_mm)
+        safe_qr_y = min(qr_y_mm, card_h_mm - qr_size_mm)
+
         # QR Preview
         dummy_qr_size_px = int(qr_size_mm * preview_scale)
         qr = qrcode.QRCode(box_size=5, border=1)
         qr.add_data("PREVIEW")
         qr.make(fit=True)
         qr_img_pil = qr.make_image(fill_color="black", back_color="white").resize((dummy_qr_size_px, dummy_qr_size_px))
-        preview_img.paste(qr_img_pil, (int(qr_x_mm * preview_scale), int(qr_y_mm * preview_scale)))
+        preview_img.paste(qr_img_pil, (int(safe_qr_x * preview_scale), int(safe_qr_y * preview_scale)))
         
         # Numerator Preview
         if enable_num:
@@ -203,7 +204,7 @@ if design_file and data_file:
                 card_w_pt, card_h_pt = card_w_mm * MM2PT, card_h_mm * MM2PT
                 gap_x_pt, gap_y_pt = gap_x_mm * MM2PT, gap_y_mm * MM2PT
                 margin_left_pt, margin_top_pt = margin_left_mm * MM2PT, margin_top_mm * MM2PT
-                qr_size_pt, qr_x_pt, qr_y_pt = qr_size_mm * MM2PT, qr_x_mm * MM2PT, qr_y_mm * MM2PT
+                qr_size_pt, qr_x_pt, qr_y_pt = qr_size_mm * MM2PT, safe_qr_x * MM2PT, safe_qr_y * MM2PT
                 num_x_pt, num_y_pt = num_x_mm * MM2PT, num_y_mm * MM2PT
 
                 item_idx, total_items = 0, len(df)
